@@ -1,0 +1,111 @@
+.t-wrapper {
+    padding: 3rem 2rem; /* Tăng padding để tạo không gian rộng hơn */
+    height: auto; /* Để chiều cao nội dung co giãn */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3rem; /* Tăng khoảng cách giữa các phần */
+    position: relative;
+  }
+  
+  .t-heading {
+    text-align: center;
+    margin-bottom: 3rem;
+  }
+  
+  .t-heading > * {
+    font-size: 2.5rem; /* Tăng kích thước font */
+    font-weight: bold;
+  }
+  
+  .t-heading span:nth-of-type(2) {
+    color: var(--orange);
+  }
+  
+  .t-blur1,
+  .t-blur2 {
+    position: absolute;
+    width: 300px; /* Tăng kích thước hiệu ứng mờ */
+    height: 300px;
+    filter: blur(100px);
+  }
+  
+  .t-blur1 {
+    top: 15%;
+    right: 5%;
+  }
+  
+  .t-blur2 {
+    bottom: 15%;
+    left: 5%;
+  }
+  
+  .testimonial {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-evenly;
+    padding: 2.5rem; /* Tăng padding cho nội dung */
+    width: 35rem; /* Làm rộng hộp hiển thị */
+    max-width: 600px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 3px solid var(--blueCard);
+    box-shadow: var(--boxShadow);
+    border-radius: 20px;
+  }
+  
+  .testimonial > img {
+    width: 100px; /* Tăng kích thước ảnh đại diện */
+    height: 100px;
+    border-radius: 50%;
+  }
+  
+  .testimonial > span {
+    color: var(--gray);
+    text-align: center;
+    font-size: 1.2rem; /* Tăng kích thước chữ */
+    line-height: 1.6;
+  }
+  
+  .t-wrapper .swiper {
+    width: 100%;
+    max-width: 800px; /* Tăng chiều rộng Swiper */
+    margin-top: 2rem;
+  }
+  
+  .t-wrapper .swiper-slide {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .t-wrapper .swiper-pagination-bullet-active {
+    background: var(--orange);
+  }
+  
+  /* Responsive */
+  @media screen and (max-width: 480px) {
+    .t-wrapper {
+      padding: 1.5rem;
+    }
+  
+    .t-heading > * {
+      font-size: 1.8rem; /* Giảm kích thước chữ trên màn hình nhỏ */
+    }
+  
+    .testimonial {
+      width: 90%; /* Đảm bảo hộp không bị tràn màn hình nhỏ */
+      padding: 2rem;
+    }
+  
+    .testimonial > img {
+      width: 80px;
+      height: 80px;
+    }
+  
+    .testimonial > span {
+      font-size: 1rem;
+    }
+  }
+  
