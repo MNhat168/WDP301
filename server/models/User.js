@@ -1,26 +1,54 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
-const UserSchema = new Schema(
-  {
-    firstName: { type: String },
-    lastName: { type: String },
-    email: { type: String, unique: true },
-    password: { type: String },
-    role: { type: Schema.Types.ObjectId, ref: "Role" },
-    message: { type: String },
-    city: { type: String },
-    phoneNumber: { type: Number },
-    dateOfBirth: { type: Date },
-    status: { type: String },
-    companyProfile: { type: Schema.Types.ObjectId, ref: "CompanyProfile" },
-    cvProfile: { type: Schema.Types.ObjectId, ref: "CVProfile" },
-    blogs: [{ type: Schema.Types.ObjectId, ref: "Blog" }],
-    packages: [{ type: Schema.Types.ObjectId, ref: "Package" }],
-    favouriteJobs: [{ type: Schema.Types.ObjectId, ref: "Job" }],
-    applications: [{ type: Schema.Types.ObjectId, ref: "Application" }],
+const UserSchema = new Schema({
+  firstName: {
+    type: String,
+    required: true,
+    trim: true
   },
-  { timestamps: true }
-);
+  lastName: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    lowercase: true,
+    trim: true
+  },
+  password: {
+    type: String,
+    required: true
+  },
+  roleId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Role',
+    required: true
+  },
+  message: {
+    type: String,
+    trim: true
+  },
+  city: {
+    type: String,
+    trim: true
+  },
+  phoneNumber: {
+    type: Number
+  },
+  dateOfBirth: {
+    type: Date
+  },
+  status: {
+    type: String,
+    enum: ['active', 'inactive', 'suspended'],
+    default: 'active'
+  }
+}, {
+  timestamps: true
+});
 
 module.exports = mongoose.model("User", UserSchema);
