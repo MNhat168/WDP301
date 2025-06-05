@@ -7,10 +7,15 @@ const ApplicationSchema = new Schema({
     ref: 'Job',
     required: true
   },
-  cvId: {
+  userId: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  cvProfileId: {
     type: Schema.Types.ObjectId,
     ref: 'CVProfile',
-    required: true
+    required: true 
   },
   applicationDate: {
     type: Date,
@@ -21,19 +26,13 @@ const ApplicationSchema = new Schema({
     enum: ['pending', 'accepted', 'rejected', 'withdrawn'],
     default: 'pending'
   },
-  companyName: {
-    type: String,
-    trim: true
-  },
-  jobTitle: {
-    type: String,
-    trim: true
-  }
 }, {
   timestamps: true
 });
 
-// Create compound unique index for JobID and CVId
-ApplicationSchema.index({ jobId: 1, cvId: 1 }, { unique: true });
+ApplicationSchema.index({ jobId: 1, userId: 1 }, { unique: true });
+ApplicationSchema.index({ userId: 1, status: 1 });
+ApplicationSchema.index({ jobId: 1, status: 1 });
+ApplicationSchema.index({ applicationDate: -1 });
 
 module.exports = mongoose.model('Application', ApplicationSchema);

@@ -22,12 +22,13 @@ const SubscriptionSchema = new Schema({
   duration: {
     type: Number, 
     required: true,
-    default: 30
+    default: 365 
   },
   packageType: {
     type: String,
     enum: ['basic', 'premium', 'enterprise'],
-    required: true
+    required: true,
+    unique: true
   },
   maxJobPostings: {
     type: Number,
@@ -41,73 +42,33 @@ const SubscriptionSchema = new Schema({
     type: Boolean,
     default: true
   },
-  
-  subscribers: [{
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true
+  features_config: {
+    canPostJobs: {
+      type: Boolean,
+      default: true
     },
-    purchaseDate: {
-      type: Date,
-      default: Date.now
+    canViewApplications: {
+      type: Boolean,
+      default: true
     },
-    startDate: {
-      type: Date,
-      default: Date.now
-    },
-    expiryDate: {
-      type: Date,
-      required: true
-    },
-    paidAmount: {
-      type: Number,
-      required: true,
-      min: 0
-    },
-    paymentMethod: {
-      type: String,
-      enum: ['credit_card', 'paypal', 'bank_transfer', 'free_trial'],
-      default: 'credit_card'
-    },
-    status: {
-      type: String,
-      enum: ['active', 'expired', 'cancelled', 'suspended', 'trial'],
-      default: 'active'
-    },
-    autoRenew: {
+    canAccessAnalytics: {
       type: Boolean,
       default: false
     },
-    usageStats: {
-      jobPostingsUsed: {
-        type: Number,
-        default: 0
-      },
-      applicationsUsed: {
-        type: Number,
-        default: 0
-      },
-      lastUsedDate: {
-        type: Date
-      }
+    canUseAdvancedSearch: {
+      type: Boolean,
+      default: false
     },
-    cancellationReason: {
-      type: String,
-      trim: true
-    },
-    cancellationDate: {
-      type: Date
+    prioritySupport: {
+      type: Boolean,
+      default: false
     }
-  }]
+  }
 }, {
   timestamps: true
 });
 
 SubscriptionSchema.index({ packageType: 1, isActive: 1 });
-SubscriptionSchema.index({ 'subscribers.userId': 1 });
-SubscriptionSchema.index({ 'subscribers.status': 1 });
-SubscriptionSchema.index({ 'subscribers.expiryDate': 1 });
-SubscriptionSchema.index({ 'subscribers.userId': 1, 'subscribers.status': 1 });
+SubscriptionSchema.index({ packageType: 1 });
 
-module.exports = mongoose.model('Subscription', SubscriptionSchema)
+module.exports = mongoose.model('Subscription', SubscriptionSchema);
