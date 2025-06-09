@@ -1,0 +1,65 @@
+@startuml Job Class Diagram
+
+skinparam classAttributeIconSize 0
+
+class JobController {
+    +createJob(jobData)
+    +getJob(jobId)
+    +getAllJobs()
+    +updateJob(jobId, jobData)
+    +expireJob(jobId)
+    +deleteJob(jobId)
+}
+
+class JobModel {
+    +company: ObjectId
+    +category: ObjectId
+    +title: String
+    +description: String
+    +experienceYears: Number
+    +location: String
+    +salary: Number
+    +status: String
+    +date: Date
+    +endDate: Date
+    +startDate: Date
+    +applicantCount: Number
+    +state: String
+    +applications: Array
+    +questions: Array
+    +favouritedBy: Array
+}
+
+class CompanyProfile {
+    +_id: ObjectId
+    +companyName: String
+    +description: String
+    +location: String
+}
+
+class Category {
+    +_id: ObjectId
+    +name: String
+    +description: String
+}
+
+class Application {
+    +_id: ObjectId
+    +jobId: ObjectId
+    +userId: ObjectId
+    +status: String
+}
+
+class Question {
+    +_id: ObjectId
+    +jobId: ObjectId
+    +content: String
+}
+
+JobController --> JobModel : manages
+JobModel --> CompanyProfile : belongs to
+JobModel --> Category : belongs to
+JobModel --> Application : has many
+JobModel --> Question : has many
+
+@enduml 

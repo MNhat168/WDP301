@@ -1,0 +1,177 @@
+@startuml Database Schema
+
+' Entities
+Table User {
+  id string [pk]
+  email string
+  password string
+  name string
+  role string
+  isVerified boolean
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+Table CompanyProfile {
+  id string [pk]
+  userId string
+  companyName string
+  description string
+  location string
+  website string
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+Table CVProfile {
+  id string [pk]
+  userId string
+  title string
+  experience string
+  education string
+  skills string
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+Table Job {
+  id string [pk]
+  companyId string
+  title string
+  description string
+  requirements string
+  location string
+  salary string
+  status string
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+Table Application {
+  id string [pk]
+  jobId string
+  userId string
+  cvId string
+  status string
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+Table Blog {
+  id string [pk]
+  userId string
+  title string
+  content string [note: 'Content of the blog post']
+  category string
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+Table Comment {
+  id string [pk]
+  blogId string
+  userId string
+  content string
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+Table Like {
+  id string [pk]
+  blogId string
+  userId string
+  createdAt timestamp
+}
+
+Table Question {
+  id string [pk]
+  userId string
+  title string
+  content string
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+Table Answer {
+  id string [pk]
+  questionId string
+  userId string
+  content string
+  createdAt timestamp
+  updatedAt timestamp
+}
+
+Table ChooseAns {
+  id string [pk]
+  questionId string
+  answerId string
+  userId string
+  createdAt timestamp
+}
+
+Table Message {
+  id string [pk]
+  senderId string
+  receiverId string
+  content string
+  createdAt timestamp
+}
+
+Table Notification {
+  id string [pk]
+  userId string
+  type string
+  content string
+  isRead boolean
+  createdAt timestamp
+}
+
+Table FavouriteJob {
+  id string [pk]
+  userId string
+  jobId string
+  createdAt timestamp
+}
+
+Table Category {
+  id string [pk]
+  name string
+  description string
+}
+
+Table Role {
+  id string [pk]
+  name string
+  description string
+}
+
+' Relationships
+Ref: CompanyProfile.userId > User.id
+Ref: CVProfile.userId > User.id
+Ref: Blog.userId > User.id
+Ref: Comment.userId > User.id
+Ref: Like.userId > User.id
+Ref: Question.userId > User.id
+Ref: Answer.userId > User.id
+Ref: ChooseAns.userId > User.id
+Ref: Message.senderId > User.id
+Ref: Message.receiverId > User.id
+Ref: Notification.userId > User.id
+Ref: FavouriteJob.userId > User.id
+Ref: User.role > Role.id
+
+Ref: Job.companyId > CompanyProfile.id
+Ref: Application.jobId > Job.id
+Ref: Application.userId > User.id
+Ref: Application.cvId > CVProfile.id
+Ref: FavouriteJob.jobId > Job.id
+
+Ref: Comment.blogId > Blog.id
+Ref: Like.blogId > Blog.id
+Ref: Blog.category > Category.id
+
+Ref: Answer.questionId > Question.id
+Ref: ChooseAns.questionId > Question.id
+Ref: ChooseAns.answerId > Answer.id
+
+@enduml 

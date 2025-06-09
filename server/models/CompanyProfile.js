@@ -1,14 +1,13 @@
-const mongoose = require('mongoose');
-const Schema = mongoose.Schema;
+import mongoose from 'mongoose';
 
-const CompanyProfileSchema = new Schema({
+const companyProfileSchema = new mongoose.Schema({
   companyName: {
     type: String,
     required: true,
     trim: true
   },
   userId: {
-    type: Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
     unique: true
@@ -33,4 +32,6 @@ const CompanyProfileSchema = new Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model('CompanyProfile', CompanyProfileSchema);
+const CompanyProfile = mongoose.model('CompanyProfile', companyProfileSchema);
+
+export default CompanyProfile;

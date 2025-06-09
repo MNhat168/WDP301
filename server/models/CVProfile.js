@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 const Schema = mongoose.Schema;
 
 const CVProfileSchema = new Schema({
@@ -153,4 +153,6 @@ CVProfileSchema.pre('save', function(next) {
   next();
 });
 
-module.exports = mongoose.model('CVProfile', CVProfileSchema);
+const CVProfile = mongoose.model('CVProfile', CVProfileSchema);
+
+export default CVProfile;
