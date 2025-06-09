@@ -1,23 +1,63 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 const Schema = mongoose.Schema;
 
 const JobSchema = new Schema({
-  company: { type: Schema.Types.ObjectId, ref: 'CompanyProfile' },
-  category: { type: Schema.Types.ObjectId, ref: 'Category' },
-  title: { type: String },
-  description: { type: String },
-  experienceYears: { type: Number },
-  location: { type: String },
-  salary: { type: Number },
-  status: { type: String },
-  date: { type: Date, default: Date.now },
-  endDate: { type: Date },
-  startDate: { type: Date },
-  applicantCount: { type: Number, default: 0 },
-  state: { type: String },
-  applications: [{ type: Schema.Types.ObjectId, ref: 'Application' }],
-  questions: [{ type: Schema.Types.ObjectId, ref: 'Question' }],
-  favouritedBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-}, { timestamps: true });
+  companyId: {
+    type: Schema.Types.ObjectId,
+    ref: 'CompanyProfile',
+    required: true
+  },
+  categoryId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Category',
+    required: true
+  },
+  title: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    required: true
+  },
+  experienceYears: {
+    type: Number,
+    min: 0
+  },
+  location: {
+    type: String,
+    trim: true
+  },
+  salary: {
+    type: Number,
+    min: 0
+  },
+  status: {
+    type: String,
+    enum: ['active', 'inactive', 'pending'],
+    default: 'pending'
+  },
+  endDate: {
+    type: Date
+  },
+  startDate: {
+    type: Date,
+    default: Date.now
+  },
+  applicantCount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  state: {
+    type: String,
+    trim: true
+  }
+}, {
+  timestamps: true
+});
 
-module.exports = mongoose.model('Job', JobSchema);
+const Job = mongoose.model('Job', JobSchema);
+
+export default Job;

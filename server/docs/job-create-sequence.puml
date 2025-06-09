@@ -1,0 +1,23 @@
+@startuml Create Job Sequence
+
+actor Employer
+participant UI as Frontend UI
+participant API as API Endpoint
+participant Controller as JobController
+participant Model as JobModel
+participant DB as MongoDB
+
+Employer->>UI: Fill job form
+UI->>API: POST /api/jobs
+note over UI,API: Send job data
+
+API->>Controller: createJob(jobData)
+Controller->>Model: Create new job
+Model->>DB: Save job
+DB-->>Model: Return saved job
+Model-->>Controller: Return job object
+Controller-->>API: Return success response
+API-->>UI: Show success message
+UI-->>Employer: Display new job
+
+@enduml 
