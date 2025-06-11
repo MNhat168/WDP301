@@ -1,0 +1,37 @@
+@startuml Server Package Diagram
+
+skinparam packageStyle rectangle
+skinparam backgroundColor white
+skinparam handwritten false
+
+package "Client" {
+    [Web]
+    [ViewComponent]
+}
+
+package "Server" {
+    [Controllers]
+    [Models]
+    [Routes]
+    [Middlewares]
+    [Utils]
+    [Config]
+}
+
+' Client to Server flow
+Web --> Routes : HTTP Request
+ViewComponent --> Web : UI Events
+
+' Server internal flow
+Routes --> Controllers : routes to
+Controllers --> Models : uses
+Controllers --> Utils : uses
+Controllers --> Config : uses
+Routes --> Middlewares : uses
+
+' Component relationships
+ViewComponent --> Web : updates
+Models --> Config : uses
+Utils --> Config : uses
+
+@enduml 

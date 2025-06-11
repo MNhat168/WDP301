@@ -1,0 +1,79 @@
+@startuml Job Sequences
+
+actor User
+actor Employer
+participant UI as Frontend UI
+participant API as API Endpoint
+participant Controller as JobController
+participant Model as JobModel
+participant DB as MongoDB
+
+== Create Job ==
+Employer->>UI: Fill job form
+UI->>API: POST /api/jobs
+note over UI,API: Send job data
+
+API->>Controller: createJob(jobData)
+Controller->>Model: Create new job
+Model->>DB: Save job
+DB-->>Model: Return saved job
+Model-->>Controller: Return job object
+Controller-->>API: Return success response
+API-->>UI: Show success message
+UI-->>Employer: Display new job
+
+== View Job ==
+User->>UI: Click on job
+UI->>API: GET /api/jobs/:id
+
+API->>Controller: getJob(jobId)
+Controller->>Model: Find job
+Model->>DB: Query job
+DB-->>Model: Return job data
+Model-->>Controller: Return job object
+Controller-->>API: Return job data
+API-->>UI: Display job details
+UI-->>User: Show job information
+
+== Edit Job ==
+Employer->>UI: Click edit job
+UI->>API: GET /api/jobs/:id
+API-->>UI: Return job data
+UI-->>Employer: Show edit form
+
+Employer->>UI: Update job details
+UI->>API: PUT /api/jobs/:id
+note over UI,API: Send updated data
+
+API->>Controller: updateJob(jobId, jobData)
+Controller->>Model: Update job
+Model->>DB: Update job
+DB-->>Model: Confirm update
+Model-->>Controller: Return updated job
+Controller-->>API: Return success response
+API-->>UI: Show success message
+UI-->>Employer: Display updated job
+
+== Expire Job ==
+note over DB: System checks job status
+DB->>Model: Check job conditions
+Model->>Model: Check endDate and applicantCount
+alt Job expired by date
+    Model->>Model: endDate < currentDate
+    Model->>DB: Update status to expired
+    DB-->>Model: Confirm update
+    Model-->>Controller: Notify job expired
+    Controller-->>API: Return expired status
+    API-->>UI: Update job status
+    UI-->>User: Show expired status
+else Job expired by max applicants
+    Model->>Model: applicantCount >= maxApplicants
+    Model->>DB: Update status to expired
+    DB-->>Model: Confirm update
+    Model-->>Controller: Notify job expired
+    Controller-->>API: Return expired status
+    API-->>UI: Update job status
+    UI-->>User: Show expired status
+end
+
+@enduml 

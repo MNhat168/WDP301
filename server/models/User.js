@@ -1,7 +1,8 @@
-const mongoose = require("mongoose");
-const Schema = mongoose.Schema;
+import mongoose from 'mongoose';
+import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
-const UserSchema = new Schema({
+const userSchema = new mongoose.Schema({
   firstName: {
     type: String,
     required: true,
@@ -24,7 +25,7 @@ const UserSchema = new Schema({
     required: true
   },
   roleId: {
-    type: Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'Role',
     required: true
   },
@@ -50,7 +51,7 @@ const UserSchema = new Schema({
   },
   favoriteJobs: [{
     jobId: {
-      type: Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.ObjectId,
       ref: 'Job',
       required: true
     },
@@ -59,41 +60,80 @@ const UserSchema = new Schema({
       default: Date.now
     }
   }],
+  username: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true
+  },
+  phone: {
+    type: String,
+    required: true,
+    validate: {
+      validator: function(v) {
+        // Regex for Vietnamese phone numbers
+        // Format: 0xx-xxx-xxxx or +84xx-xxx-xxxx
+        return /^(\+84|0)(3|5|7|8|9)([0-9]{8})$/.test(v);
+      },
+      message: props => `${props.value} is not a valid Vietnamese phone number!`
+    }
+  },
+  isActive: {
+    type: Boolean,
+    default: false
+  },
+  isBlocked: {
+    type: Boolean,
+    default: false
+  },
+  refreshToken: {
+    type: String
+  },
+  otp: {
+    type: String
+  },
+  otpExpire: {
+    type: Date
+  },
+  images: {
+    type: String
+  }
 }, {
   timestamps: true
 });
 
-UserSchema.index({ email: 1 });
-UserSchema.index({ roleId: 1 });
-UserSchema.index({ status: 1 });
-UserSchema.index({ 'favoriteJobs.jobId': 1 });
-UserSchema.index({ 'favoriteJobs.favoriteDate': -1 });
-UserSchema.methods.getActiveSubscription = async function() {
+userSchema.index({ email: 1 });
+userSchema.index({ roleId: 1 });
+userSchema.index({ status: 1 });
+userSchema.index({ 'favoriteJobs.jobId': 1 });
+userSchema.index({ 'favoriteJobs.favoriteDate': -1 });
+
+userSchema.methods.getActiveSubscription = async function() {
   const UserSubscription = require('./UserSubscription');
   return await UserSubscription.findActiveByUserId(this._id);
 };
 
-UserSchema.methods.getAllSubscriptions = async function() {
+userSchema.methods.getAllSubscriptions = async function() {
   const UserSubscription = require('./UserSubscription');
   return await UserSubscription.findByUserId(this._id);
 };
 
-UserSchema.methods.hasActiveSubscription = async function() {
+userSchema.methods.hasActiveSubscription = async function() {
   const subscription = await this.getActiveSubscription();
   return !!subscription;
 };
 
-UserSchema.methods.canPostJob = async function() {
+userSchema.methods.canPostJob = async function() {
   const subscription = await this.getActiveSubscription();
   return subscription ? subscription.canPostJob() : false;
 };
 
-UserSchema.methods.canApplyToJob = async function() {
+userSchema.methods.canApplyToJob = async function() {
   const subscription = await this.getActiveSubscription();
   return subscription ? subscription.canApplyToJob() : false;
 };
 
-UserSchema.methods.incrementJobPostings = async function() {
+userSchema.methods.incrementJobPostings = async function() {
   const subscription = await this.getActiveSubscription();
   if (!subscription) {
     throw new Error('No active subscription found');
@@ -101,14 +141,15 @@ UserSchema.methods.incrementJobPostings = async function() {
   return await subscription.incrementJobPostings();
 };
 
-UserSchema.methods.incrementApplications = async function() {
+userSchema.methods.incrementApplications = async function() {
   const subscription = await this.getActiveSubscription();
   if (!subscription) {
     throw new Error('No active subscription found');
   }
   return await subscription.incrementApplications();
 };
-UserSchema.methods.addFavoriteJob = function(jobId) {
+
+userSchema.methods.addFavoriteJob = function(jobId) {
   const existingFavorite = this.favoriteJobs.find(
     fav => fav.jobId.toString() === jobId.toString()
   );
@@ -125,7 +166,7 @@ UserSchema.methods.addFavoriteJob = function(jobId) {
   return this.save();
 };
 
-UserSchema.methods.removeFavoriteJob = function(jobId) {
+userSchema.methods.removeFavoriteJob = function(jobId) {
   const initialLength = this.favoriteJobs.length;
   this.favoriteJobs = this.favoriteJobs.filter(
     fav => fav.jobId.toString() !== jobId.toString()
@@ -138,21 +179,21 @@ UserSchema.methods.removeFavoriteJob = function(jobId) {
   return this.save();
 };
 
-UserSchema.methods.isFavoriteJob = function(jobId) {
+userSchema.methods.isFavoriteJob = function(jobId) {
   return this.favoriteJobs.some(
     fav => fav.jobId.toString() === jobId.toString()
   );
 };
 
-UserSchema.methods.getFavoriteJobIds = function() {
+userSchema.methods.getFavoriteJobIds = function() {
   return this.favoriteJobs.map(fav => fav.jobId);
 };
 
-UserSchema.methods.getFavoriteJobsCount = function() {
+userSchema.methods.getFavoriteJobsCount = function() {
   return this.favoriteJobs.length;
 };
 
-UserSchema.methods.getFavoriteJobsSortedByDate = function(ascending = false) {
+userSchema.methods.getFavoriteJobsSortedByDate = function(ascending = false) {
   const sorted = [...this.favoriteJobs].sort((a, b) => {
     return ascending ? 
       new Date(a.favoriteDate) - new Date(b.favoriteDate) :
@@ -161,13 +202,34 @@ UserSchema.methods.getFavoriteJobsSortedByDate = function(ascending = false) {
   return sorted;
 };
 
-UserSchema.methods.clearAllFavorites = function() {
+userSchema.methods.clearAllFavorites = function() {
   this.favoriteJobs = [];
   return this.save();
 };
 
-UserSchema.pre('save', function(next) {
-  next();
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) {
+    next();
+  }
+  const salt = bcrypt.genSaltSync(10);
+  this.password = await bcrypt.hash(this.password, salt);
 });
 
-module.exports = mongoose.model("User", UserSchema);
+userSchema.methods.isCorrectPassword = async function(password) {
+  return await bcrypt.compare(password, this.password);
+};
+
+userSchema.methods.createOtp = function() {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  this.otp = otp;
+  this.otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+  return otp;
+};
+
+userSchema.methods.verifyOtp = function(otp) {
+  return this.otp === otp && this.otpExpire > Date.now();
+};
+
+const User = mongoose.model('User', userSchema);
+
+export default User;

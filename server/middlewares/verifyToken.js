@@ -1,7 +1,7 @@
-const jwt = require('jsonwebtoken')
-const asyncHandler = require('express-async-handler')
+import jwt from 'jsonwebtoken'
+import asyncHandler from 'express-async-handler'
 
-const verifyAccessToken = asyncHandler((req, res, next) => {
+export const verifyAccessToken = asyncHandler((req, res, next) => {
     if(req?.headers.authorization?.startsWith('Bearer')){
         const token = req.headers.authorization.split(' ')[1]
         jwt.verify(token, process.env.JWT_SECRET, (err, decode) => {
@@ -20,7 +20,7 @@ const verifyAccessToken = asyncHandler((req, res, next) => {
     }
 })
 
-const isAdmin = asyncHandler((req, res, next) => {
+export const isAdmin = asyncHandler((req, res, next) => {
     const {role} = req.user
     if(role !== 'ROLE_ADMIN')
     return res.status(401).json({
@@ -30,7 +30,13 @@ const isAdmin = asyncHandler((req, res, next) => {
     next()
 })
 
-module.exports = {
-    verifyAccessToken,
-    isAdmin
-}
+export const isEmployee = asyncHandler((req, res, next) => {
+    const {role} = req.user
+    console.log(req.user)
+    if(role !== 'ROLE_EMPLOYEE')
+    return res.status(401).json({
+        success: false,
+        mes: 'Require employee authority to access this page'
+    })
+    next()
+})
