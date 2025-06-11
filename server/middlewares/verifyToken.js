@@ -29,3 +29,14 @@ export const isAdmin = asyncHandler((req, res, next) => {
     })
     next()
 })
+
+export const isEmployee = asyncHandler((req, res, next) => {
+    const {role} = req.user
+    console.log(req.user)
+    if(role !== 'ROLE_EMPLOYEE')
+    return res.status(401).json({
+        success: false,
+        mes: 'Require employee authority to access this page'
+    })
+    next()
+})

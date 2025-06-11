@@ -1,7 +1,7 @@
 import express from 'express';
-import { verifyAccessToken } from '../middlewares/verifyToken.js';
+import { verifyAccessToken, isEmployee } from '../middlewares/verifyToken.js';
 import {
-  searchJobs,
+  getAllJobs,
   getJobDetails,
   applyForJob,
   getJobsByCompany,
@@ -9,18 +9,24 @@ import {
   updateApplicationStatus,
   getFavoriteJobs,
   addFavoriteJob,
-  removeFavoriteJob
+  removeFavoriteJob,
+  createJob
 } from '../controllers/jobController.js';
 
 const router = express.Router();
 
 // Public routes
-router.get('/search', searchJobs);
+router.get('/', getAllJobs);
 router.get('/:id', getJobDetails);
 router.get('/company/:companyId', getJobsByCompany);
 
 // Protected routes
 router.use(verifyAccessToken);
+
+// Employee only routes
+router.post('/create', createJob);
+
+// All authenticated user routes
 router.post('/:id/apply', applyForJob);
 router.get('/applied', getAppliedJobs);
 router.patch('/:id/applications/:userId', updateApplicationStatus);

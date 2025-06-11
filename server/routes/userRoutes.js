@@ -6,7 +6,9 @@ import uploadCloud from '../config/cloudinary.js'
 
 const router = express.Router()
 
-router.post('/register', ctrls.register)
+// Separate registration routes
+router.post('/register-jobseeker', ctrls.registerJobseeker)
+router.post('/register-employer', ctrls.registerEmployer)
 router.post('/verify-register/:email', ctrls.verifyOtp)
 router.post('/login', ctrls.login)
 router.get('/current', verifyAccessToken, ctrls.getCurrent)

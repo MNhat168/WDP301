@@ -5,7 +5,8 @@ import jwt from 'jsonwebtoken';
 import sendMail from '../config/sendMail.js';
 import Role from '../models/Role.js';
 
-const register = asyncHandler(async(req, res) => {
+// Đăng ký cho Job Seeker
+const registerJobseeker = asyncHandler(async(req, res) => {
     const { email, password, username, dateOfBirth, phone, firstname, lastname } = req.body;
     console.log(req.body);
 
@@ -68,7 +69,7 @@ const register = asyncHandler(async(req, res) => {
                     
                     <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
                         <p style="color: #666666; margin: 0 0 15px; font-size: 16px; line-height: 1.5;">
-                            Thank you for joining EasyJob! To complete your registration and start exploring job opportunities, please use the following verification code:
+                            Welcome to EasyJob! Thank you for joining our platform as a Job Seeker. To complete your registration and start exploring job opportunities, please use the following verification code:
                         </p>
                         <div style="background-color: #4a90e2; color: #ffffff; padding: 15px; border-radius: 6px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
                             ${otp}
@@ -117,7 +118,126 @@ const register = asyncHandler(async(req, res) => {
         return res.status(200).json({
             status: true,
             code: 200,
-            message: 'User created successfully. OTP sent to email.',
+            message: 'Job Seeker account created successfully. OTP sent to email.',
+            result: newUser
+        });
+    }
+});
+
+// Đăng ký cho Employer
+const registerEmployer = asyncHandler(async(req, res) => {
+    const { email, password, username, dateOfBirth, phone, firstname, lastname, companyName, companyDescription } = req.body;
+    console.log(req.body);
+
+    if (!email || !password || !dateOfBirth || !username || !phone || !firstname || !lastname)
+        return res.status(400).json({
+            status: false,
+            code: 400,
+            message: 'Invalid input',
+            result: "Missing input. Please provide: email, password, username, dateOfBirth, phone, firstname, lastname"
+        });
+
+    const user = await User.findOne({ email, phone });
+    if (user) 
+        throw new Error('User already exists');
+    else {
+        // Tìm roleId với tên 'ROLE_EMPLOYEE'
+        const role = await Role.findOne({ roleName: 'ROLE_EMPLOYEE' });
+        if (!role) {
+            return res.status(500).json({
+                status: false,
+                code: 500,
+                message: 'Role not found',
+                result: "ROLE_EMPLOYEE role not found in database"
+            });
+        }
+
+        // Tạo user data với roleId và convert field names
+        const userData = {
+            ...req.body,
+            firstName: firstname,  // Convert to camelCase for model
+            lastName: lastname,    // Convert to camelCase for model
+            roleId: role._id
+        };
+
+        const newUser = new User(userData);
+        const otp = newUser.createOtp(); // Tạo OTP
+        await newUser.save();
+
+        let type = 'verify_account'
+        // Send mail
+        const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>EasyJob - Email Verification</title>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 20px;">
+                <!-- Header -->
+                <div style="text-align: center; padding: 20px 0; background-color: #4a90e2; border-radius: 8px 8px 0 0;">
+                    <h1 style="color: #ffffff; margin: 0; font-size: 24px;">EasyJob</h1>
+                    <p style="color: #ffffff; margin: 10px 0 0; font-size: 16px;">Your Recruitment Partner</p>
+                </div>
+
+                <!-- Main Content -->
+                <div style="padding: 30px 20px; background-color: #ffffff;">
+                    <h2 style="color: #333333; margin: 0 0 20px; font-size: 20px;">Hi ${firstname} ${lastname},</h2>
+                    
+                    <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="color: #666666; margin: 0 0 15px; font-size: 16px; line-height: 1.5;">
+                            Welcome to EasyJob! Thank you for joining our platform as an Employer. To complete your registration and start posting job opportunities, please use the following verification code:
+                        </p>
+                        <div style="background-color: #4a90e2; color: #ffffff; padding: 15px; border-radius: 6px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
+                            ${otp}
+                        </div>
+                        <p style="color: #666666; margin: 0; font-size: 14px; font-style: italic;">
+                            This code will expire in 10 minutes.
+                        </p>
+                    </div>
+
+                    <p style="color: #666666; margin: 0 0 20px; font-size: 16px; line-height: 1.5;">
+                        If you didn't request this verification code, you can safely ignore this email.
+                    </p>
+
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="#" style="background-color: #4a90e2; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify Email</a>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 0 0 8px 8px; text-align: center;">
+                    <div style="margin-bottom: 20px;">
+                        <a href="#" style="margin: 0 10px;"><img src="https://cdn-icons-png.flaticon.com/512/733/733547.png" alt="Facebook" style="width: 24px; height: 24px;"></a>
+                        <a href="#" style="margin: 0 10px;"><img src="https://cdn-icons-png.flaticon.com/512/733/733558.png" alt="Twitter" style="width: 24px; height: 24px;"></a>
+                        <a href="#" style="margin: 0 10px;"><img src="https://cdn-icons-png.flaticon.com/512/733/733553.png" alt="LinkedIn" style="width: 24px; height: 24px;"></a>
+                    </div>
+                    
+                    <p style="color: #666666; margin: 0 0 10px; font-size: 14px;">
+                        &copy; 2024 EasyJob. All rights reserved.
+                    </p>
+                    
+                    <div style="margin-top: 15px; font-size: 12px; color: #999999;">
+                        <a href="#" style="color: #999999; text-decoration: none; margin: 0 10px;">Privacy Policy</a>
+                        <span style="color: #999999;">•</span>
+                        <a href="#" style="color: #999999; text-decoration: none; margin: 0 10px;">Terms of Service</a>
+                        <span style="color: #999999;">•</span>
+                        <a href="#" style="color: #999999; text-decoration: none; margin: 0 10px;">Help Center</a>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>`;
+
+        const data = { email, html, type };
+        await sendMail(data);
+
+        return res.status(200).json({
+            status: true,
+            code: 200,
+            message: 'Employer account created successfully. OTP sent to email.',
             result: newUser
         });
     }
@@ -510,7 +630,8 @@ const updateRolebyAdmin = asyncHandler(async(req, res) => {
 })
 
 export {
-    register,
+    registerJobseeker,
+    registerEmployer,
     verifyOtp,
     login,
     getCurrent,

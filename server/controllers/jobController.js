@@ -2,69 +2,96 @@ import Job from '../models/Job.js';
 import User from '../models/User.js';
 import asyncHandler from 'express-async-handler';
 
-// Search and filter jobs
-const searchJobs = asyncHandler(async (req, res) => {
-  const { keyword, location, jobType, minSalary, maxSalary, experience, education, skills, page = 1, limit = 10 } = req.query;
+// Get all jobs with search and filter options
+const getAllJobs = asyncHandler(async (req, res) => {
+  const { 
+    // Search parameters
+    keyword, 
+    
+    // Filter parameters
+    location, 
+    jobType, 
+    minSalary, 
+    maxSalary, 
+    experience, 
+    education, 
+    skills,
+    
+    // Pagination
+    page = 1, 
+    limit = 10 
+  } = req.query;
   
+  // Base query - only active jobs
   const searchQuery = { status: 'active' };
 
+  // Text search functionality
   if (keyword) {
     searchQuery.$text = { $search: keyword };
   }
 
+  // Location filter
   if (location) {
     searchQuery.location = new RegExp(location, 'i');
   }
 
+  // Job type filter
   if (jobType) {
     searchQuery.jobType = jobType;
   }
 
+  // Salary range filter
   if (minSalary || maxSalary) {
     searchQuery.salary = {};
-    if (minSalary) searchQuery.salary.$gte = minSalary;
-    if (maxSalary) searchQuery.salary.$lte = maxSalary;
+    if (minSalary) searchQuery.salary.min = { $gte: parseInt(minSalary) };
+    if (maxSalary) searchQuery.salary.max = { $lte: parseInt(maxSalary) };
   }
 
+  // Experience filter
   if (experience) {
     searchQuery.experience = experience;
   }
 
+  // Education filter
   if (education) {
     searchQuery.education = education;
   }
 
-  if (skills && skills.length > 0) {
-    searchQuery.skills = { $in: skills };
+  // Skills filter
+  if (skills) {
+    const skillsArray = Array.isArray(skills) ? skills : skills.split(',');
+    searchQuery.skills = { $in: skillsArray };
   }
 
-  const skip = (page - 1) * limit;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
 
   try {
     const [jobs, total] = await Promise.all([
       Job.find(searchQuery)
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit),
+        .limit(parseInt(limit)),
       Job.countDocuments(searchQuery)
     ]);
 
     return res.status(200).json({
       status: true,
       code: 200,
-      message: 'Get jobs successfully',
-      result: {
-        jobs,
-        total,
-        page,
-        totalPages: Math.ceil(total / limit)
+      message: 'Get all jobs successfully',
+      result: jobs,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / parseInt(limit)),
+        totalJobs: total,
+        hasNextPage: skip + parseInt(limit) < total,
+        hasPrevPage: parseInt(page) > 1
       }
     });
   } catch (error) {
     return res.status(400).json({
       status: false,
       code: 400,
-      message: 'Get jobs failed',
+      message: 'Get all jobs failed',
       result: error.message
     });
   }
@@ -315,12 +342,78 @@ const removeFavoriteJob = asyncHandler(async (req, res) => {
   }
 });
 
+// Create a new job (for ROLE_EMPLOYEE only)
+const createJob = asyncHandler(async (req, res) => {
+  const { _id } = req.user;
+  const {
+    title,
+    description,
+    requirements,
+    benefits,
+    location,
+    jobType,
+    salary,
+    experience,
+    education,
+    skills,
+    deadline,
+    companyId
+  } = req.body;
+
+  try {
+    // Validate required fields
+    if (!title || !description || !requirements || !location || !jobType || !salary || !deadline) {
+      return res.status(400).json({
+        status: false,
+        code: 400,
+        message: 'Missing required fields',
+        result: 'Please provide: title, description, requirements, location, jobType, salary, deadline'
+      });
+    }
+
+    // Create new job
+    const newJob = new Job({
+      title,
+      description,
+      requirements,
+      benefits,
+      location,
+      jobType,
+      salary,
+      experience,
+      education,
+      skills: skills || [],
+      deadline: new Date(deadline),
+      companyId: companyId || null,
+      createdBy: _id,
+      status: 'active'
+    });
+
+    const savedJob = await newJob.save();
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'Job created successfully',
+      result: savedJob
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Create job failed',
+      result: error.message
+    });
+  }
+});
+
 export {
-  searchJobs,
+  getAllJobs,
   getJobDetails,
   applyForJob,
   getAppliedJobs,
   getFavoriteJobs,
   addFavoriteJob,
-  removeFavoriteJob
+  removeFavoriteJob,
+  createJob
 }; 
