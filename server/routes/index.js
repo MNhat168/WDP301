@@ -3,6 +3,7 @@ import jobRoutes from './jobRoutes.js'
 import companyRoutes from './companyRoutes.js'
 import cvRoutes from './cvRoutes.js'
 import messageRoutes from './messageRoutes.js'
+import categoryRoutes from './categoryRoutes.js'
 import { notFound, errHandler } from '../middlewares/errorHandler.js'
 
 const initRoutes = (app) => {
@@ -12,6 +13,7 @@ const initRoutes = (app) => {
     app.use('/api/companies', companyRoutes)
     app.use('/api/cvs', cvRoutes)
     app.use('/api/messages', messageRoutes)
+    app.use('/api/categories', categoryRoutes)
     app.use(notFound)
     app.use(errHandler)
 }
