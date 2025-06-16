@@ -15,7 +15,7 @@ import {
 
 const router = express.Router();
 
-// Public routes
+// Public routes - specific routes first to avoid conflicts
 router.get('/', getAllJobs);
 router.get('/:id', getJobDetails);
 router.get('/company/:companyId', getJobsByCompany);
@@ -27,10 +27,12 @@ router.use(verifyAccessToken);
 router.post('/create', createJob);
 
 // All authenticated user routes
-router.post('/:id/apply', applyForJob);
 router.get('/applied', getAppliedJobs);
-router.patch('/:id/applications/:userId', updateApplicationStatus);
 router.get('/favorites', getFavoriteJobs);
+
+// Routes with :id parameter should come after more specific routes
+router.post('/:id/apply', applyForJob);
+router.patch('/:id/applications/:userId', updateApplicationStatus);
 router.post('/:id/favorite', addFavoriteJob);
 router.delete('/:id/favorite', removeFavoriteJob);
 

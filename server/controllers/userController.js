@@ -1,5 +1,6 @@
 import { generateAccessToken, generateRefreshToken } from '../middlewares/jwt.js';
 import User from '../models/User.js';
+import CompanyProfile from '../models/CompanyProfile.js';
 import asyncHandler from 'express-async-handler';
 import jwt from 'jsonwebtoken';
 import sendMail from '../config/sendMail.js';
@@ -331,9 +332,15 @@ const login = asyncHandler(async(req, res) => {
         })
     }
 
+    let companyInfo = null
+    if (response) {
+        companyInfo = await CompanyProfile.findOne({ userId: response._id })
+    }
+    
     if(response && await response.isCorrectPassword(password)){
         //Tách password và role ra khỏi response
         const { password, refreshToken, ...userData } = response.toObject()
+        userData.companyInfo = companyInfo;
         //Tạo access Token với roleName từ populated role
         const accessToken = generateAccessToken(response._id, response.roleId.roleName)
         //Tạo refresh token
@@ -366,11 +373,22 @@ const authGoogle = asyncHandler(async(req, res) => {
 const getCurrent = asyncHandler(async(req, res) => {
     const { _id } = req.user
     const user = await User.findById(_id).select('-refreshToken -password').populate('roleId')
+    
+    let companyInfo = null
+    if (user) {
+        companyInfo = await CompanyProfile.findOne({ userId: _id })
+    }
+    
+    const result = user ? {
+        ...user.toObject(),
+        companyInfo: companyInfo || null
+    } : null
+    
     return res.status(200).json({
         status: user ? true : false,
         code: user ? 200 : 400,
         message : user ? 'User found' : 'User not found',
-        result: user ? user : 'User not found'
+        result: result
     })
 })
 

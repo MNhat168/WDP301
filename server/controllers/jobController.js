@@ -101,14 +101,35 @@ const getAllJobs = asyncHandler(async (req, res) => {
 const getJobDetails = asyncHandler(async (req, res) => {
   const { id } = req.params;
   
+  // Validate ObjectId format
+  if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Invalid job ID format',
+      result: 'Job ID must be a valid ObjectId'
+    });
+  }
+  
   try {
-    const job = await Job.findById(id);
+    const job = await Job.findById(id)
+      .populate('companyId', 'companyName address url')
+      .populate('categoryId', 'name');
+
+    if (!job) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'Job not found',
+        result: 'Job not found'
+      });
+    }
 
     return res.status(200).json({
-      status: job ? true : false,
-      code: job ? 200 : 404,
-      message: job ? 'Get job details successfully' : 'Job not found',
-      result: job ? job : 'Job not found'
+      status: true,
+      code: 200,
+      message: 'Get job details successfully',
+      result: job
     });
   } catch (error) {
     return res.status(400).json({
@@ -357,17 +378,18 @@ const createJob = asyncHandler(async (req, res) => {
     education,
     skills,
     deadline,
-    companyId
+    companyId,
+    categoryId
   } = req.body;
 
   try {
     // Validate required fields
-    if (!title || !description || !requirements || !location || !jobType || !salary || !deadline) {
+    if (!title || !description || !location || !jobType || !salary || !deadline || !companyId || !categoryId) {
       return res.status(400).json({
         status: false,
         code: 400,
         message: 'Missing required fields',
-        result: 'Please provide: title, description, requirements, location, jobType, salary, deadline'
+        result: 'Please provide: title, description, location, jobType, salary, deadline, companyId, categoryId'
       });
     }
 
@@ -384,9 +406,10 @@ const createJob = asyncHandler(async (req, res) => {
       education,
       skills: skills || [],
       deadline: new Date(deadline),
-      companyId: companyId || null,
+      companyId,
+      categoryId,
       createdBy: _id,
-      status: 'active'
+      status: 'pending'
     });
 
     const savedJob = await newJob.save();
