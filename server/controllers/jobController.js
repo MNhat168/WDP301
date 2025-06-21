@@ -25,9 +25,9 @@ const getAllJobs = asyncHandler(async (req, res) => {
   // Base query - only active jobs
   const searchQuery = { status: 'active' };
 
-  // Text search functionality
+  // Text search functionality - search by title using regex (like LIKE in SQL)
   if (keyword) {
-    searchQuery.$text = { $search: keyword };
+    searchQuery.title = new RegExp(keyword, 'i');
   }
 
   // Location filter
@@ -68,7 +68,11 @@ const getAllJobs = asyncHandler(async (req, res) => {
   try {
     const [jobs, total] = await Promise.all([
       Job.find(searchQuery)
-        .sort({ createdAt: -1 })
+        .sort({ 
+          'premiumFeatures.isFeatured': -1, // Featured jobs first
+          'premiumFeatures.isSponsored': -1, // Then sponsored jobs
+          createdAt: -1 // Then by creation date
+        })
         .skip(skip)
         .limit(parseInt(limit)),
       Job.countDocuments(searchQuery)
@@ -125,11 +129,26 @@ const getJobDetails = asyncHandler(async (req, res) => {
       });
     }
 
+    // Track job view (increment analytics)
+    await job.incrementView();
+
+    // Check if user has premium features to see additional data
+    let responseData = job.toObject();
+    
+    if (req.user) {
+      const user = await User.findById(req.user._id);
+      const isPremium = await user.isPremiumUser();
+      
+      if (isPremium && user.premiumFeatures.canSeeJobViewers) {
+        responseData.analytics = job.analytics;
+      }
+    }
+
     return res.status(200).json({
       status: true,
       code: 200,
       message: 'Get job details successfully',
-      result: job
+      result: responseData
     });
   } catch (error) {
     return res.status(400).json({
@@ -148,6 +167,24 @@ const applyForJob = asyncHandler(async (req, res) => {
   const { _id } = req.user;
 
   try {
+    // Get user and check subscription
+    const user = await User.findById(_id);
+    const isPremium = await user.isPremiumUser();
+    
+    // Check if user can apply (free tier limits)
+    if (!isPremium && !user.canApplyToJobFree()) {
+      return res.status(403).json({
+        status: false,
+        code: 403,
+        message: 'You have reached your monthly application limit. Upgrade to Premium for unlimited applications.',
+        result: {
+          currentUsage: user.usageLimits.monthlyApplications,
+          limit: 5,
+          upgradeRequired: true
+        }
+      });
+    }
+    
     const job = await Job.findById(id);
     
     if (!job) {
@@ -187,12 +224,18 @@ const applyForJob = asyncHandler(async (req, res) => {
     });
 
     await job.save();
+    
+    // Track user application
+    await user.incrementJobApplication();
 
     return res.status(200).json({
       status: true,
       code: 200,
       message: 'Application submitted successfully',
-      result: 'Application submitted successfully'
+      result: {
+        message: 'Application submitted successfully',
+        remainingApplications: isPremium ? 'unlimited' : (5 - user.usageLimits.monthlyApplications)
+      }
     });
   } catch (error) {
     return res.status(400).json({
@@ -320,13 +363,36 @@ const addFavoriteJob = asyncHandler(async (req, res) => {
 
   try {
     const user = await User.findById(_id);
+    const isPremium = await user.isPremiumUser();
+    
+    // Check if user can add more favorites (free tier limits)
+    if (!isPremium && !user.canAddMoreFavorites()) {
+      return res.status(403).json({
+        status: false,
+        code: 403,
+        message: 'You have reached your favorites limit. Upgrade to Premium for unlimited favorites.',
+        result: {
+          currentUsage: user.usageLimits.favoritesCount,
+          limit: 10,
+          upgradeRequired: true
+        }
+      });
+    }
+    
     await user.addFavoriteJob(id);
+    
+    // Update favorites count
+    user.usageLimits.favoritesCount = user.favoriteJobs.length;
+    await user.save();
 
     return res.status(200).json({
       status: true,
       code: 200,
       message: 'Job added to favorites',
-      result: 'Job added to favorites'
+      result: {
+        message: 'Job added to favorites',
+        remainingFavorites: isPremium ? 'unlimited' : (10 - user.usageLimits.favoritesCount)
+      }
     });
   } catch (error) {
     return res.status(400).json({
@@ -346,12 +412,19 @@ const removeFavoriteJob = asyncHandler(async (req, res) => {
   try {
     const user = await User.findById(_id);
     await user.removeFavoriteJob(id);
+    
+    // Update favorites count
+    user.usageLimits.favoritesCount = user.favoriteJobs.length;
+    await user.save();
 
     return res.status(200).json({
       status: true,
       code: 200,
       message: 'Job removed from favorites',
-      result: 'Job removed from favorites'
+      result: {
+        message: 'Job removed from favorites',
+        currentFavorites: user.usageLimits.favoritesCount
+      }
     });
   } catch (error) {
     return res.status(400).json({
@@ -379,10 +452,42 @@ const createJob = asyncHandler(async (req, res) => {
     skills,
     deadline,
     companyId,
-    categoryId
+    categoryId,
+    // Premium features
+    isFeatured = false,
+    isSponsored = false,
+    isUrgentHiring = false,
+    featuredDuration = 30
   } = req.body;
 
   try {
+    // Check user subscription and limits
+    const user = await User.findById(_id);
+    const subscription = await user.getActiveSubscription();
+    
+    if (!subscription) {
+      return res.status(403).json({
+        status: false,
+        code: 403,
+        message: 'Active subscription required to post jobs',
+        result: 'No active subscription found'
+      });
+    }
+    
+    // Check job posting limits
+    if (!subscription.canPostJob()) {
+      return res.status(403).json({
+        status: false,
+        code: 403,
+        message: 'You have reached your monthly job posting limit. Upgrade your plan for more postings.',
+        result: {
+          currentUsage: subscription.usageStats.jobPostingsUsed,
+          limit: subscription.getRemainingJobPostings(),
+          upgradeRequired: true
+        }
+      });
+    }
+    
     // Validate required fields
     if (!title || !description || !location || !jobType || !salary || !deadline || !companyId || !categoryId) {
       return res.status(400).json({
@@ -409,16 +514,28 @@ const createJob = asyncHandler(async (req, res) => {
       companyId,
       categoryId,
       createdBy: _id,
-      status: 'pending'
+      status: 'pending',
+      premiumFeatures: {
+        isFeatured: isFeatured && subscription.features_config.canPostFeaturedJobs,
+        isSponsored: isSponsored && subscription.features_config.canPostFeaturedJobs,
+        isUrgentHiring: isUrgentHiring && subscription.features_config.canPostFeaturedJobs,
+        featuredUntil: isFeatured ? new Date(Date.now() + featuredDuration * 24 * 60 * 60 * 1000) : null
+      }
     });
 
     const savedJob = await newJob.save();
+    
+    // Increment user's job posting count
+    await subscription.incrementJobPostings();
 
     return res.status(200).json({
       status: true,
       code: 200,
       message: 'Job created successfully',
-      result: savedJob
+      result: {
+        job: savedJob,
+        remainingPostings: subscription.getRemainingJobPostings()
+      }
     });
   } catch (error) {
     return res.status(400).json({

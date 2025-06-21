@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 const Schema = mongoose.Schema;
 
 const UserSubscriptionSchema = new Schema({
@@ -302,4 +302,4 @@ UserSubscriptionSchema.pre('save', function(next) {
   next();
 });
 
-module.exports = mongoose.model('UserSubscription', UserSubscriptionSchema);
+export default mongoose.model('UserSubscription', UserSubscriptionSchema);

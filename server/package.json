@@ -8,7 +8,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "init-roles": "node scripts/initRoles.js"
+    "init-roles": "node scripts/initRoles.js",
+    "init-subscriptions": "node scripts/initSubscriptions.js",
+    "setup": "npm run init-roles && npm run init-subscriptions"
   },
   "keywords": [],
   "author": "",
