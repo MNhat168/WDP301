@@ -18,7 +18,7 @@ router.post('/forgotpassword', ctrls.forgotPassword)
 router.post('/verify-forgot-pass/:email', ctrls.verifyOtpAndResetPassword)
 router.get('/', [verifyAccessToken, isAdmin], ctrls.getAllUser)
 router.put('/current', [verifyAccessToken], ctrls.updateUser)
-router.put('/upload-image', [verifyAccessToken], uploadCloud.single('images'), ctrls.uploadImage)
+router.post('/upload-image', [verifyAccessToken], uploadCloud.single('images'), ctrls.uploadImage)
 //getuserbyid
 router.post('/create-account-by-admin', [verifyAccessToken, isAdmin], ctrls.createAccountbyAdmin)
 router.put('/:id', [verifyAccessToken, isAdmin], ctrls.updateUserbyAdmin)

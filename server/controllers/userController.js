@@ -622,17 +622,39 @@ const banUserByAdmin = asyncHandler(async(req, res) => {
 })
 
 
-const uploadImage= asyncHandler(async(req, res) => {
-    const { _id } = req.user
-    if(!req.file) throw new Error('Missing input files')
-    const response = await User.findByIdAndUpdate(_id, {$set: {images: req.file?.path}}, {new: true})
+const uploadImage = asyncHandler(async(req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ 
+      status: false,
+      message: 'No file uploaded' 
+    });
+  }
+  
+  try {
+    const { _id } = req.user;
+    // Return the secure URL directly
+    const imageUrl = req.file.path;
+    
+    const response = await User.findByIdAndUpdate(
+      _id, 
+      {$set: {images: imageUrl}}, 
+      {new: true}
+    );
+    
     return res.status(200).json({
-        status: response ? true : false,
-        code: response ? 200 : 400,
-        message: response ? 'Image uploaded successfully' : 'Can not upload image',
-        result: response ? response : 'Can not upload file!!!!'
-    })
-})
+      status: true,
+      code: 200,
+      message: 'Image uploaded successfully',
+      result: response
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    return res.status(500).json({
+      status: false,
+      message: 'Image upload failed'
+    });
+  }
+});
 
 
 const updateRolebyAdmin = asyncHandler(async(req, res) => {
