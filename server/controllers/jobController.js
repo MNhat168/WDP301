@@ -74,7 +74,8 @@ const getAllJobs = asyncHandler(async (req, res) => {
           createdAt: -1 // Then by creation date
         })
         .skip(skip)
-        .limit(parseInt(limit)),
+        .limit(parseInt(limit))
+        .populate('companyId', 'companyName address url'),
       Job.countDocuments(searchQuery)
     ]);
 
@@ -165,6 +166,16 @@ const applyForJob = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { cv } = req.body;
   const { _id } = req.user;
+
+  // Validate ObjectId format
+  if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Invalid job ID format',
+      result: 'Job ID must be a valid ObjectId'
+    });
+  }
 
   try {
     // Get user and check subscription
@@ -329,37 +340,21 @@ export const updateApplicationStatus = asyncHandler(async (req, res) => {
   })
 });
 
-// Get favorite jobs
-const getFavoriteJobs = asyncHandler(async (req, res) => {
-  const { _id } = req.user;
-
-  try {
-    const user = await User.findById(_id).populate('favoriteJobs.jobId');
-    const favoriteJobs = user.favoriteJobs.map(fav => ({
-      ...fav.jobId.toObject(),
-      favoriteDate: fav.favoriteDate
-    }));
-
-    return res.status(200).json({
-      status: true,
-      code: 200,
-      message: 'Get favorite jobs successfully',
-      result: favoriteJobs
-    });
-  } catch (error) {
-    return res.status(400).json({
-      status: false,
-      code: 400,
-      message: 'Get favorite jobs failed',
-      result: error.message
-    });
-  }
-});
 
 // Add job to favorites
 const addFavoriteJob = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { _id } = req.user;
+
+  // Validate ObjectId format
+  if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Invalid job ID format',
+      result: 'Job ID must be a valid ObjectId'
+    });
+  }
 
   try {
     const user = await User.findById(_id);
@@ -409,6 +404,16 @@ const removeFavoriteJob = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { _id } = req.user;
 
+  // Validate ObjectId format
+  if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Invalid job ID format',
+      result: 'Job ID must be a valid ObjectId'
+    });
+  }
+
   try {
     const user = await User.findById(_id);
     await user.removeFavoriteJob(id);
@@ -446,7 +451,8 @@ const createJob = asyncHandler(async (req, res) => {
     benefits,
     location,
     jobType,
-    salary,
+    minSalary,
+    maxSalary,
     experience,
     education,
     skills,
@@ -489,7 +495,7 @@ const createJob = asyncHandler(async (req, res) => {
     }
     
     // Validate required fields
-    if (!title || !description || !location || !jobType || !salary || !deadline || !companyId || !categoryId) {
+    if (!title || !description || !location || !jobType || !minSalary || !maxSalary || !deadline || !companyId || !categoryId) {
       return res.status(400).json({
         status: false,
         code: 400,
@@ -506,7 +512,8 @@ const createJob = asyncHandler(async (req, res) => {
       benefits,
       location,
       jobType,
-      salary,
+      minSalary,
+      maxSalary,
       experience,
       education,
       skills: skills || [],
@@ -552,7 +559,6 @@ export {
   getJobDetails,
   applyForJob,
   getAppliedJobs,
-  getFavoriteJobs,
   addFavoriteJob,
   removeFavoriteJob,
   createJob

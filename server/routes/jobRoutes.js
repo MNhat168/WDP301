@@ -7,7 +7,6 @@ import {
   getJobsByCompany,
   getAppliedJobs,
   updateApplicationStatus,
-  getFavoriteJobs,
   addFavoriteJob,
   removeFavoriteJob,
   createJob
@@ -23,12 +22,11 @@ router.get('/company/:companyId', getJobsByCompany);
 // Protected routes
 router.use(verifyAccessToken);
 
-// Employee only routes
-router.post('/create', createJob);
-
 // All authenticated user routes
 router.get('/applied', getAppliedJobs);
-router.get('/favorites', getFavoriteJobs);
+
+// Employee only routes
+router.post('/create', createJob);
 
 // Routes with :id parameter should come after more specific routes
 router.post('/:id/apply', applyForJob);
