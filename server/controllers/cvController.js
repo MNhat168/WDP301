@@ -1,196 +1,411 @@
-import CV from '../models/CVProfile.js';
-import asyncHandler from 'express-async-handler';
+import CVProfile from '../models/CVProfile.js';
+import { v2 as cloudinary } from 'cloudinary';
+import streamifier from 'streamifier';
 
-// Create new CV
-export const createCV = asyncHandler(async (req, res) => {
-  const cvData = {
-    ...req.body,
-    user: req.user._id
-  };
+// Initialize CV Profile for new user
+export const initializeCVProfile = async (req, res) => {
+  try {
+    const { userId } = req.body;
 
-  const cv = await CV.create(cvData);
-  return res.status(200).json({
-    status: cv ? true : false,
-    code: cv ? 200 : 400,
-    message: cv ? 'Create CV successfully' : 'Create CV failed',
-    result: cv ? cv : 'Something went wrong!!!!',
-  })
-});
+    // Check if CV profile already exists
+    const existingProfile = await CVProfile.findOne({ userId });
+    if (existingProfile) {
+      return res.status(400).json({
+        success: false,
+        message: 'CV Profile already exists for this user'
+      });
+    }
 
-// Get user's CVs
-export const getUserCVs = asyncHandler(async (req, res) => {
-  const cvs = await CV.getUserCVs(req.user._id);
-  return res.status(200).json({
-    status: cvs ? true : false,
-    code: cvs ? 200 : 400,
-    message: cvs ? 'Get user CVs successfully' : 'Get user CVs failed',
-    result: cvs ? cvs : 'Something went wrong!!!!',
-  })
-});
+    // Create new CV profile with default values
+    const newCVProfile = new CVProfile({
+      userId,
+      description: '',
+      phoneNumber: '',
+      summary: '',
+      workExperience: [],
+      education: [],
+      skills: [],
+      languages: [],
+      certifications: [],
+      visibility: 'employers_only'
+    });
 
-// Get CV details
-export const getCVDetails = asyncHandler(async (req, res) => {
-  const cv = await CV.findById(req.params.id);
+    await newCVProfile.save();
 
-  if (!cv) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'CV not found' : 'CV not found',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
+    res.status(201).json({
+      success: true,
+      message: 'CV Profile initialized successfully',
+      data: newCVProfile
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error initializing CV Profile',
+      error: error.message
+    });
   }
+};
 
-  if (cv.user.toString() !== req.user._id.toString()) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'Not authorized to access this CV' : 'Not authorized to access this CV',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
+// Get CV Profile by user ID
+export const getCVProfile = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const cvProfile = await CVProfile.findOne({ userId }).populate('userId', 'name email');
+
+    if (!cvProfile) {
+      return res.status(404).json({
+        success: false,
+        message: 'CV Profile not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: cvProfile
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching CV Profile',
+      error: error.message
+    });
   }
+};
 
-  return res.status(200).json({
-    status: cv ? true : false,
-    code: cv ? 200 : 400,
-    message: cv ? 'Get CV details successfully' : 'Get CV details failed',
-    result: cv ? cv : 'Something went wrong!!!!',
-  })
-});
+// Update CV Profile
+export const updateCVProfile = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const updateData = req.body;
 
-// Update CV
-export const updateCV = asyncHandler(async (req, res) => {
-  const cv = await CV.findById(req.params.id);
+    // Remove protected fields
+    delete updateData.visibility;
+    delete updateData.userId;
+    delete updateData._id;
 
-  if (!cv) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'CV not found' : 'CV not found',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
+    let cvProfile = await CVProfile.findOne({ userId });
+
+    if (!cvProfile) {
+      // Create new profile if doesn't exist
+      cvProfile = new CVProfile({
+        userId,
+        ...updateData,
+        visibility: 'employers_only'
+      });
+    } else {
+      // Update existing profile
+      Object.assign(cvProfile, updateData);
+    }
+
+    await cvProfile.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'CV Profile updated successfully',
+      data: cvProfile
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error updating CV Profile',
+      error: error.message
+    });
   }
+};
 
-  if (cv.user.toString() !== req.user._id.toString()) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'Not authorized to update this CV' : 'Not authorized to update this CV',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
+// Upload certification files
+const uploadToCloudinary = (buffer, filename) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: 'raw',
+        folder: 'certifications',
+        public_id: `cert_${Date.now()}_${filename.replace(/\.[^/.]+$/, "")}`,
+        format: 'pdf'
+      },
+      (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      }
+    );
+
+    streamifier.createReadStream(buffer).pipe(uploadStream);
+  });
+};
+
+export const uploadCertificationFiles = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { certificationIndex, name, issuer, issueDate, expiryDate, credentialId } = req.body;
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No files uploaded'
+      });
+    }
+
+    const cvProfile = await CVProfile.findOne({ userId });
+    if (!cvProfile) {
+      return res.status(404).json({
+        success: false,
+        message: 'CV Profile not found'
+      });
+    }
+
+    // Upload files to Cloudinary
+    const uploadPromises = req.files.map(file =>
+      uploadToCloudinary(file.buffer, file.originalname)
+    );
+
+    const uploadResults = await Promise.all(uploadPromises);
+
+    // Format files for database
+    const files = uploadResults.map(result => ({
+      url: result.secure_url,
+      public_id: result.public_id
+    }));
+
+    // Add files to specific certification or create new certification
+    const certIndex = parseInt(certificationIndex);
+    if (certIndex >= 0 && certIndex < cvProfile.certifications.length) {
+      // Add to existing certification
+      cvProfile.certifications[certIndex].files.push(...files);
+    } else {
+      // Create new certification with files
+      cvProfile.certifications.push({
+        name: name || '',
+        issuer: issuer || '',
+        issueDate: issueDate || null,
+        expiryDate: expiryDate || null,
+        credentialId: credentialId || '',
+        files: files
+      });
+    }
+
+    await cvProfile.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Certification files uploaded successfully',
+      data: cvProfile.certifications
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading certification files',
+      error: error.message
+    });
   }
+};
 
-  Object.assign(cv, req.body);
-  await cv.save();
+// Delete certification file
+export const deleteCertificationFile = async (req, res) => {
+  try {
+    const { userId, certificationId, filePublicId } = req.params;
 
-  return res.status(200).json({
-    status: cv ? true : false,
-    code: cv ? 200 : 400,
-    message: cv ? 'Update CV successfully' : 'Update CV failed',
-    result: cv ? cv : 'Something went wrong!!!!',
-  })
-});
+    const cvProfile = await CVProfile.findOne({ userId });
+    if (!cvProfile) {
+      return res.status(404).json({
+        success: false,
+        message: 'CV Profile not found'
+      });
+    }
 
-// Set CV as default
-export const setDefaultCV = asyncHandler(async (req, res) => {
-  const cv = await CV.findById(req.params.id);
+    // Find and update certification
+    const certification = cvProfile.certifications.id(certificationId);
+    if (!certification) {
+      return res.status(404).json({
+        success: false,
+        message: 'Certification not found'
+      });
+    }
 
-  if (!cv) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'CV not found' : 'CV not found',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
+    // Remove file from certification
+    certification.files = certification.files.filter(
+      file => file.public_id !== filePublicId
+    );
+
+    // Delete file from Cloudinary
+    await cloudinary.uploader.destroy(filePublicId, {
+      resource_type: 'raw'
+    });
+
+    await cvProfile.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Certification file deleted successfully',
+      data: cvProfile.certifications
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting certification file',
+      error: error.message
+    });
   }
+};
 
-  if (cv.user.toString() !== req.user._id.toString()) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'Not authorized to update this CV' : 'Not authorized to update this CV',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
+// Get CV Profile completion status
+export const getCVProfileCompletion = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const cvProfile = await CVProfile.findOne({ userId });
+    if (!cvProfile) {
+      return res.status(404).json({
+        success: false,
+        message: 'CV Profile not found'
+      });
+    }
+
+    const completionPercentage = cvProfile.completionPercentage;
+    const isComplete = cvProfile.isComplete;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        completionPercentage,
+        isComplete,
+        lastUpdated: cvProfile.lastUpdated
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching CV Profile completion status',
+      error: error.message
+    });
   }
+};
 
-  await cv.setAsDefault();
-  return res.status(200).json({
-    status: cv ? true : false,
-    code: cv ? 200 : 400,
-    message: cv ? 'CV set as default successfully' : 'CV set as default failed',
-    result: cv ? cv : 'Something went wrong!!!!',
-  })
-});
+// Delete entire CV Profile
+export const deleteCVProfile = async (req, res) => {
+  try {
+    const { userId } = req.params;
 
-// Delete CV
-export const deleteCV = asyncHandler(async (req, res) => {
-  const cv = await CV.findById(req.params.id);
+    const cvProfile = await CVProfile.findOne({ userId });
+    if (!cvProfile) {
+      return res.status(404).json({
+        success: false,
+        message: 'CV Profile not found'
+      });
+    }
 
-  if (!cv) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'CV not found' : 'CV not found',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
+    // Delete all certification files from Cloudinary
+    for (const certification of cvProfile.certifications) {
+      for (const file of certification.files) {
+        try {
+          await cloudinary.uploader.destroy(file.public_id, {
+            resource_type: 'raw'
+          });
+        } catch (cloudinaryError) {
+          console.error('Error deleting file from Cloudinary:', cloudinaryError);
+        }
+      }
+    }
+
+    await CVProfile.findOneAndDelete({ userId });
+
+    res.status(200).json({
+      success: true,
+      message: 'CV Profile deleted successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting CV Profile',
+      error: error.message
+    });
   }
+};
 
-  if (cv.user.toString() !== req.user._id.toString()) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'Not authorized to delete this CV' : 'Not authorized to delete this CV',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
+// Add new certification (without files initially)
+export const addCertification = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { name, issuer, issueDate, expiryDate, credentialId } = req.body;
+
+    const cvProfile = await CVProfile.findOne({ userId });
+    if (!cvProfile) {
+      return res.status(404).json({
+        success: false,
+        message: 'CV Profile not found'
+      });
+    }
+
+    cvProfile.certifications.push({
+      name: name || '',
+      issuer: issuer || '',
+      issueDate: issueDate || null,
+      expiryDate: expiryDate || null,
+      credentialId: credentialId || '',
+      files: []
+    });
+
+    await cvProfile.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Certification added successfully',
+      data: cvProfile.certifications
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error adding certification',
+      error: error.message
+    });
   }
+};
 
-  await cv.deleteOne();
-  return res.status(200).json({
-    status: cv ? true : false,
-    code: cv ? 200 : 400,
-    message: cv ? 'CV deleted successfully' : 'CV deleted failed',
-    result: cv ? cv : 'Something went wrong!!!!',
-  })
-});
+// Delete certification
+export const deleteCertification = async (req, res) => {
+  try {
+    const { userId, certificationId } = req.params;
 
-// Upload CV file
-export const uploadCVFile = asyncHandler(async (req, res) => {
-  const cv = await CV.findById(req.params.id);
+    const cvProfile = await CVProfile.findOne({ userId });
+    if (!cvProfile) {
+      return res.status(404).json({
+        success: false,
+        message: 'CV Profile not found'
+      });
+    }
 
-  if (!cv) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'CV not found' : 'CV not found',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
+    // Find certification to delete its files from Cloudinary
+    const certification = cvProfile.certifications.id(certificationId);
+    if (certification) {
+      // Delete all files from Cloudinary
+      for (const file of certification.files) {
+        try {
+          await cloudinary.uploader.destroy(file.public_id, {
+            resource_type: 'raw'
+          });
+        } catch (cloudinaryError) {
+          console.error('Error deleting file from Cloudinary:', cloudinaryError);
+        }
+      }
+    }
+
+    // Remove certification from array
+    cvProfile.certifications.pull(certificationId);
+    await cvProfile.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Certification deleted successfully',
+      data: cvProfile.certifications
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting certification',
+      error: error.message
+    });
   }
-
-  if (cv.user.toString() !== req.user._id.toString()) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'Not authorized to update this CV' : 'Not authorized to update this CV',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
-  }
-
-  if (!req.file) {
-    return res.status(200).json({
-      status: cv ? true : false,
-      code: cv ? 200 : 400,
-      message: cv ? 'No file uploaded' : 'No file uploaded',
-      result: cv ? cv : 'Something went wrong!!!!',
-    })
-  }
-
-  cv.fileUrl = req.file.path;
-  await cv.save();
-
-  return res.status(200).json({
-    status: cv ? true : false,
-    code: cv ? 200 : 400,
-    message: cv ? 'CV file uploaded successfully' : 'CV file uploaded failed',
-    result: cv ? cv : 'Something went wrong!!!!',
-  })
-}); 
+};

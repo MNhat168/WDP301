@@ -71,7 +71,6 @@ const SubscriptionSchema = new Schema({
     default: true
   },
   features_config: {
-    // Job Seeker Features
     canApplyUnlimited: {
       type: Boolean,
       default: false
