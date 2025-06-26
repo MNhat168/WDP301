@@ -51,8 +51,7 @@ const userSchema = new mongoose.Schema({
   favoriteJobs: [{
     jobId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Job',
-      required: true
+      ref: 'Job'
     },
     favoriteDate: {
       type: Date,
@@ -272,12 +271,18 @@ userSchema.methods.clearAllFavorites = function() {
   return this.save();
 };
 
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
-  const salt = bcrypt.genSaltSync(10);
-  this.password = await bcrypt.hash(this.password, salt);
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    return next();
+  } catch (err) {
+    return next(err);
+  }
 });
 
 userSchema.methods.isCorrectPassword = async function(password) {

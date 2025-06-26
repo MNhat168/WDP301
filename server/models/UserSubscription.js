@@ -69,7 +69,7 @@ const UserSubscriptionSchema = new Schema({
   },
   packageType: {
     type: String,
-    enum: ['basic', 'premium', 'enterprise'],
+    enum: ['free', 'basic', 'premium', 'enterprise'],
     required: true
   }
 }, { 

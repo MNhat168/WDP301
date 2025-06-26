@@ -5,6 +5,8 @@ import asyncHandler from 'express-async-handler';
 import jwt from 'jsonwebtoken';
 import sendMail from '../config/sendMail.js';
 import Role from '../models/Role.js';
+import Subscription from '../models/Subscription.js';
+import UserSubscription from '../models/UserSubscription.js';
 
 // Đăng ký cho Job Seeker
 const registerJobseeker = asyncHandler(async(req, res) => {
@@ -45,6 +47,25 @@ const registerJobseeker = asyncHandler(async(req, res) => {
         const newUser = new User(userData);
         const otp = newUser.createOtp(); // Tạo OTP
         await newUser.save();
+
+        // Auto assign free subscription
+        try {
+            const freePackage = await Subscription.findOne({ packageType: 'free' });
+            if (freePackage) {
+                const expiry = new Date();
+                expiry.setDate(expiry.getDate() + freePackage.duration);
+                await UserSubscription.create({
+                    userId: newUser._id,
+                    subscriptionId: freePackage._id,
+                    startDate: new Date(),
+                    expiryDate: expiry,
+                    status: 'active',
+                    packageType: freePackage.packageType
+                });
+            }
+        } catch (err) {
+            console.error('Create free subscription failed:', err.message);
+        }
 
         let type = 'verify_account'
         // Send mail
@@ -165,6 +186,25 @@ const registerEmployer = asyncHandler(async(req, res) => {
         const otp = newUser.createOtp(); // Tạo OTP
         await newUser.save();
 
+        // Auto assign basic subscription for employer
+        try {
+            const basicPackage = await Subscription.findOne({ packageType: 'basic' });
+            if (basicPackage) {
+                const expiry = new Date();
+                expiry.setDate(expiry.getDate() + basicPackage.duration);
+                await UserSubscription.create({
+                    userId: newUser._id,
+                    subscriptionId: basicPackage._id,
+                    startDate: new Date(),
+                    expiryDate: expiry,
+                    status: 'active',
+                    packageType: basicPackage.packageType
+                });
+            }
+        } catch (err) {
+            console.error('Create basic subscription failed:', err.message);
+        }
+
         let type = 'verify_account'
         // Send mail
         const html = `
@@ -246,9 +286,7 @@ const registerEmployer = asyncHandler(async(req, res) => {
 
 const verifyOtp = asyncHandler(async(req, res) => {
     const { email} = req.params;
-    console.log({email})
     const { otp } = req.body;
-    console.log({otp})
     if (!email || !otp)
         return res.status(400).json({
             status: false,
@@ -258,7 +296,6 @@ const verifyOtp = asyncHandler(async(req, res) => {
         });
 
     const user = await User.findOne({ email });
-    console.log({user})
     if (!user)
         return res.status(404).json({
             status: false,
@@ -669,6 +706,98 @@ const updateRolebyAdmin = asyncHandler(async(req, res) => {
     })
 })
 
+// Change password (authenticated)
+const changePassword = asyncHandler(async (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({
+            status: false,
+            code: 400,
+            message: 'Invalid input',
+            result: 'Please provide currentPassword and newPassword'
+        });
+    }
+
+    try {
+        const { _id } = req.user;
+        const user = await User.findById(_id);
+
+        if (!user) {
+            return res.status(404).json({
+                status: false,
+                code: 404,
+                message: 'User not found',
+                result: 'User not found'
+            });
+        }
+
+        const isMatch = await user.isCorrectPassword(currentPassword);
+
+        if (!isMatch) {
+            return res.status(400).json({
+                status: false,
+                code: 400,
+                message: 'Current password is incorrect',
+                result: 'Current password is incorrect'
+            });
+        }
+
+        // Update password
+        user.password = newPassword;
+        await user.save();
+
+        return res.status(200).json({
+            status: true,
+            code: 200,
+            message: 'Password changed successfully',
+            result: 'Password changed successfully'
+        });
+    } catch (error) {
+        return res.status(400).json({
+            status: false,
+            code: 400,
+            message: 'Change password failed',
+            result: error.message
+        });
+    }
+});
+
+// Get favorite jobs
+const getFavoriteJobs = asyncHandler(async (req, res) => {
+    const { _id } = req.user;
+  
+    try {
+        const user = await User.findById(_id).populate({
+            path: 'favoriteJobs.jobId',
+            populate: {
+              path: 'companyId',
+              select: 'companyName address url'
+            }
+          });
+
+      const favoriteJobs = user.favoriteJobs.map(fav => ({
+        ...fav.jobId.toObject(),
+        favoriteDate: fav.favoriteDate
+      }));
+  
+      return res.status(200).json({
+        status: true,
+        code: 200,
+        message: 'Get favorite jobs successfully',
+        result: favoriteJobs
+      });
+    } catch (error) {
+      return res.status(400).json({
+        status: false,
+        code: 400,
+        message: 'Get favorite jobs failed',
+        result: error.message
+        });
+    }
+});
+  
+
 export {
     registerJobseeker,
     registerEmployer,
@@ -687,4 +816,6 @@ export {
     banUserByAdmin,
     uploadImage,
     updateRolebyAdmin,
+    changePassword,
+    getFavoriteJobs
 };

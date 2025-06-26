@@ -29,7 +29,11 @@ const JobSchema = new Schema({
     type: String,
     trim: true
   },
-  salary: {
+  minSalary: {
+    type: Number,
+    min: 0
+  },
+  maxSalary: {
     type: Number,
     min: 0
   },
