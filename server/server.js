@@ -5,11 +5,11 @@ import dotenv from 'dotenv'
 import cookieParser from "cookie-parser"
 import initRoutes from './routes/index.js'
 
+//Config - Move this to the top
+dotenv.config()
+
 const app = express()
 const port = process.env.PORT || 5000
-
-//Config
-dotenv.config()
 
 // CORS configuration
 const corsOptions = {
@@ -57,12 +57,6 @@ app.use(express.urlencoded({ extended: true }))
 // Routes
 initRoutes(app)
 
-
-console.log('Cloudinary Config:', {
-    name: process.env.CLOUDINARY_NAME,
-    key: process.env.CLOUDINARY_KEY ? '***' : 'MISSING',
-    secret: process.env.CLOUDINARY_SECRET ? '***' : 'MISSING'
-});
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('Connected to MongoDB'))

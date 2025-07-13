@@ -84,6 +84,39 @@ export const updateCVProfile = async (req, res) => {
     delete updateData.userId;
     delete updateData._id;
 
+    // Transform and validate data formats
+    if (updateData.skills) {
+      // If skills is a string, convert to proper array format
+      if (typeof updateData.skills === 'string') {
+        updateData.skills = [{
+          skillName: updateData.skills,
+          level: 'beginner',
+          yearsOfExperience: 0
+        }];
+      }
+      // If skills is an array of strings, convert each to proper object format
+      else if (Array.isArray(updateData.skills)) {
+        updateData.skills = updateData.skills.map(skill => {
+          if (typeof skill === 'string') {
+            return {
+              skillName: skill,
+              level: 'beginner',
+              yearsOfExperience: 0
+            };
+          }
+          return skill; // Already in correct format
+        });
+      }
+    }
+
+    // Validate other array fields
+    const arrayFields = ['workExperience', 'education', 'languages', 'certifications'];
+    arrayFields.forEach(field => {
+      if (updateData[field] && !Array.isArray(updateData[field])) {
+        updateData[field] = [];
+      }
+    });
+
     let cvProfile = await CVProfile.findOne({ userId });
 
     if (!cvProfile) {

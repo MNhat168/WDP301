@@ -15,7 +15,7 @@ const initRoutes = (app) => {
     app.use('/api/jobs', jobRoutes)
     app.use('/api/applications', applicationRoutes)
     app.use('/api/companies', companyRoutes)
-    app.use('/api/cvs', cvRoutes)
+    app.use('/api/cv', cvRoutes)
     app.use('/api/messages', messageRoutes)
     app.use('/api/categories', categoryRoutes)
     app.use('/api/subscriptions', subscriptionRoutes)
