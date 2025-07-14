@@ -9,7 +9,8 @@ import {
   updateApplicationStatus,
   addFavoriteJob,
   removeFavoriteJob,
-  createJob
+  getPendingJobs,
+  updateJobStatus
 } from '../controllers/jobController.js';
 
 const router = express.Router();
@@ -26,12 +27,13 @@ router.use(verifyAccessToken);
 router.get('/applied', getAppliedJobs);
 
 // Employee only routes
-router.post('/create', createJob);
 
 // Routes with :id parameter should come after more specific routes
 router.post('/:id/apply', applyForJob);
 router.patch('/:id/applications/:userId', updateApplicationStatus);
 router.post('/:id/favorite', addFavoriteJob);
 router.delete('/:id/favorite', removeFavoriteJob);
+router.get('/admin/pending', getPendingJobs);
+router.patch('/admin/:id/status', updateJobStatus);
 
 export default router; 

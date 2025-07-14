@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 const Schema = mongoose.Schema;
 
 const NotificationSchema = new Schema({
@@ -17,7 +17,7 @@ const NotificationSchema = new Schema({
   },
   readStatus: {
     type: Number,
-    enum: [0, 1], // 0 = unread, 1 = read
+    enum: [0, 1], 
     default: 0
   },
   type: {
@@ -29,4 +29,5 @@ const NotificationSchema = new Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model('Notification', NotificationSchema);
+const Notification = mongoose.model('Notification', NotificationSchema);
+export default Notification;

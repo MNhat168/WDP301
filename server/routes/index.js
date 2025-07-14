@@ -1,5 +1,6 @@
 import userRoutes from './userRoutes.js'
 import jobRoutes from './jobRoutes.js'
+import employerJobRoutes from './employerJobRoutes.js'
 import companyRoutes from './companyRoutes.js'
 import cvRoutes from './cvRoutes.js'
 import messageRoutes from './messageRoutes.js'
@@ -13,6 +14,7 @@ const initRoutes = (app) => {
     //user Router
     app.use('/api/user', userRoutes)
     app.use('/api/jobs', jobRoutes)
+    app.use('/api/employer/jobs', employerJobRoutes)
     app.use('/api/applications', applicationRoutes)
     app.use('/api/companies', companyRoutes)
     app.use('/api/cvs', cvRoutes)

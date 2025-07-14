@@ -16,7 +16,6 @@ export const searchCompanies = asyncHandler(async (req, res) => {
 // Get company details
 export const getCompanyDetails = asyncHandler(async (req, res) => {
   const company = await Company.findById(req.params.id)
-    .populate('jobs');
 
   if (!company) {
     return res.status(200).json({

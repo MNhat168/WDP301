@@ -796,8 +796,107 @@ const getFavoriteJobs = asyncHandler(async (req, res) => {
         });
     }
 });
-  
 
+// Get user stats for admin
+const getUserStatsForAdmin = asyncHandler(async (req, res) => {
+    try {
+        const totalUsers = await User.countDocuments();
+        const jobSeekerRole = await Role.findOne({ roleName: 'ROLE_JOBSEEKER' });
+        const employerRole = await Role.findOne({ roleName: 'ROLE_EMPLOYEE' });
+        
+        const totalJobSeekers = jobSeekerRole 
+            ? await User.countDocuments({ roleId: jobSeekerRole._id }) 
+            : 0;
+            
+        const totalEmployers = employerRole 
+            ? await User.countDocuments({ roleId: employerRole._id }) 
+            : 0;
+            
+        const bannedUsers = await User.countDocuments({ isBlocked: true });
+
+        res.status(200).json({
+            status: true,
+            result: {
+                totalUsers,
+                totalJobSeekers,
+                totalEmployers,
+                bannedUsers
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: false,
+            message: 'Error fetching stats',
+            error: error.message
+        });
+    }
+});
+
+const getUsersByRole = asyncHandler(async (req, res) => {
+    try {
+        const { role } = req.query;
+        let roleName;
+        let query = {};
+
+        if (role === 'jobseekers') {
+            roleName = 'ROLE_JOBSEEKER';
+        } else if (role === 'employers') {
+            roleName = 'ROLE_EMPLOYEE';
+        }
+
+        if (roleName) {
+            const roleDoc = await Role.findOne({ roleName });
+            if (!roleDoc) return res.status(404).json({ status: false, message: 'Role not found' });
+            query.roleId = roleDoc._id;
+        }
+
+        const users = await User.find(query)
+            .select('_id firstName lastName email isBlocked createdAt')
+            .lean();
+
+        res.status(200).json({
+            status: true,
+            result: users.map(user => ({
+                ...user,
+                userId: user._id,
+                status: user.isBlocked ? 'banned' : 'active'
+            }))
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: false,
+            message: 'Error fetching users',
+            error: error.message
+        });
+    }
+});
+
+const toggleBanUser = asyncHandler(async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = await User.findById(userId);
+        
+        if (!user) return res.status(404).json({ status: false, message: 'User not found' });
+        
+        user.isBlocked = !user.isBlocked;
+        await user.save();
+        
+        res.status(200).json({
+            status: true,
+            result: {
+                userId: user._id,
+                status: user.isBlocked ? 'banned' : 'active'
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: false,
+            message: 'Error updating user status',
+            error: error.message
+        });
+    }
+});
+  
 export {
     registerJobseeker,
     registerEmployer,
@@ -817,5 +916,8 @@ export {
     uploadImage,
     updateRolebyAdmin,
     changePassword,
-    getFavoriteJobs
+    getFavoriteJobs,
+    getUserStatsForAdmin,
+    getUsersByRole,
+    toggleBanUser
 };

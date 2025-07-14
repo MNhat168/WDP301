@@ -23,7 +23,11 @@ router.put('/current', [verifyAccessToken], ctrls.updateUser)
 router.post('/upload-image', [verifyAccessToken], uploadCloud.single('images'), ctrls.uploadImage)
 //getuserbyid
 router.post('/create-account-by-admin', [verifyAccessToken, isAdmin], ctrls.createAccountbyAdmin)
+router.get('/admin/users/stats', [verifyAccessToken, isAdmin], ctrls.getUserStatsForAdmin);
+router.get('/admin/users', [verifyAccessToken, isAdmin], ctrls.getUsersByRole);
+router.post('/admin/users/:userId/toggle-ban', [verifyAccessToken, isAdmin], ctrls.toggleBanUser);
 router.put('/:id', [verifyAccessToken, isAdmin], ctrls.updateUserbyAdmin)
 router.put('/ban/:uid', [verifyAccessToken, isAdmin], ctrls.banUserByAdmin)
+
 
 export default router

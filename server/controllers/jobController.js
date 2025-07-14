@@ -1,27 +1,29 @@
 import Job from '../models/Job.js';
 import User from '../models/User.js';
+import Notification from '../models/Notification.js';
+import CompanyProfile from '../models/CompanyProfile.js';
 import asyncHandler from 'express-async-handler';
 
 // Get all jobs with search and filter options
 const getAllJobs = asyncHandler(async (req, res) => {
-  const { 
+  const {
     // Search parameters
-    keyword, 
-    
+    keyword,
+
     // Filter parameters
-    location, 
-    jobType, 
-    minSalary, 
-    maxSalary, 
-    experience, 
-    education, 
+    location,
+    jobType,
+    minSalary,
+    maxSalary,
+    experience,
+    education,
     skills,
-    
+
     // Pagination
-    page = 1, 
-    limit = 10 
+    page = 1,
+    limit = 10
   } = req.query;
-  
+
   // Base query - only active jobs
   const searchQuery = { status: 'active' };
 
@@ -68,7 +70,7 @@ const getAllJobs = asyncHandler(async (req, res) => {
   try {
     const [jobs, total] = await Promise.all([
       Job.find(searchQuery)
-        .sort({ 
+        .sort({
           'premiumFeatures.isFeatured': -1, // Featured jobs first
           'premiumFeatures.isSponsored': -1, // Then sponsored jobs
           createdAt: -1 // Then by creation date
@@ -105,7 +107,7 @@ const getAllJobs = asyncHandler(async (req, res) => {
 // Get job details
 const getJobDetails = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  
+
   // Validate ObjectId format
   if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
     return res.status(400).json({
@@ -115,7 +117,7 @@ const getJobDetails = asyncHandler(async (req, res) => {
       result: 'Job ID must be a valid ObjectId'
     });
   }
-  
+
   try {
     const job = await Job.findById(id)
       .populate('companyId', 'companyName address url')
@@ -135,11 +137,11 @@ const getJobDetails = asyncHandler(async (req, res) => {
 
     // Check if user has premium features to see additional data
     let responseData = job.toObject();
-    
+
     if (req.user) {
       const user = await User.findById(req.user._id);
       const isPremium = await user.isPremiumUser();
-      
+
       if (isPremium && user.premiumFeatures.canSeeJobViewers) {
         responseData.analytics = job.analytics;
       }
@@ -181,7 +183,7 @@ const applyForJob = asyncHandler(async (req, res) => {
     // Get user and check subscription
     const user = await User.findById(_id);
     const isPremium = await user.isPremiumUser();
-    
+
     // Check if user can apply (free tier limits)
     if (!isPremium && !user.canApplyToJobFree()) {
       return res.status(403).json({
@@ -195,9 +197,9 @@ const applyForJob = asyncHandler(async (req, res) => {
         }
       });
     }
-    
+
     const job = await Job.findById(id);
-    
+
     if (!job) {
       return res.status(404).json({
         status: false,
@@ -235,7 +237,7 @@ const applyForJob = asyncHandler(async (req, res) => {
     });
 
     await job.save();
-    
+
     // Track user application
     await user.incrementJobApplication();
 
@@ -261,7 +263,7 @@ const applyForJob = asyncHandler(async (req, res) => {
 // Get jobs by company
 export const getJobsByCompany = asyncHandler(async (req, res) => {
   const company = await Company.findById(req.params.companyId);
-  
+
   if (!company) {
     return res.status(200).json({
       status: company ? true : false,
@@ -359,7 +361,7 @@ const addFavoriteJob = asyncHandler(async (req, res) => {
   try {
     const user = await User.findById(_id);
     const isPremium = await user.isPremiumUser();
-    
+
     // Check if user can add more favorites (free tier limits)
     if (!isPremium && !user.canAddMoreFavorites()) {
       return res.status(403).json({
@@ -373,9 +375,9 @@ const addFavoriteJob = asyncHandler(async (req, res) => {
         }
       });
     }
-    
+
     await user.addFavoriteJob(id);
-    
+
     // Update favorites count
     user.usageLimits.favoritesCount = user.favoriteJobs.length;
     await user.save();
@@ -417,7 +419,7 @@ const removeFavoriteJob = asyncHandler(async (req, res) => {
   try {
     const user = await User.findById(_id);
     await user.removeFavoriteJob(id);
-    
+
     // Update favorites count
     user.usageLimits.favoritesCount = user.favoriteJobs.length;
     await user.save();
@@ -470,7 +472,7 @@ const createJob = asyncHandler(async (req, res) => {
     // Check user subscription and limits
     const user = await User.findById(_id);
     const subscription = await user.getActiveSubscription();
-    
+
     if (!subscription) {
       return res.status(403).json({
         status: false,
@@ -479,7 +481,7 @@ const createJob = asyncHandler(async (req, res) => {
         result: 'No active subscription found'
       });
     }
-    
+
     // Check job posting limits
     if (!subscription.canPostJob()) {
       return res.status(403).json({
@@ -493,7 +495,7 @@ const createJob = asyncHandler(async (req, res) => {
         }
       });
     }
-    
+
     // Validate required fields
     if (!title || !description || !location || !jobType || !minSalary || !maxSalary || !deadline || !companyId || !categoryId) {
       return res.status(400).json({
@@ -531,7 +533,7 @@ const createJob = asyncHandler(async (req, res) => {
     });
 
     const savedJob = await newJob.save();
-    
+
     // Increment user's job posting count
     await subscription.incrementJobPostings();
 
@@ -554,6 +556,205 @@ const createJob = asyncHandler(async (req, res) => {
   }
 });
 
+// Get jobs for logged-in employer
+const getEmployerJobs = asyncHandler(async (req, res) => {
+  try {
+    // Get company profile of logged-in employer
+    const companyProfile = await CompanyProfile.findOne({ userId: req.user._id });
+
+    if (!companyProfile) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'Company profile not found',
+        result: 'Create a company profile first'
+      });
+    }
+
+    const jobs = await Job.find({ companyId: companyProfile._id })
+      .populate('companyId', 'companyName address url')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'Get employer jobs successfully',
+      result: jobs
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Get employer jobs failed',
+      result: error.message
+    });
+  }
+});
+
+// Get job details for employer
+const getEmployerJobDetails = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // Get company profile
+    const companyProfile = await CompanyProfile.findOne({ userId: req.user._id });
+
+    if (!companyProfile) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'Company profile not found',
+        result: 'Create a company profile first'
+      });
+    }
+
+    const job = await Job.findOne({
+      _id: id,
+      companyId: companyProfile._id
+    }).populate('companyId', 'companyName address url');
+
+    if (!job) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'Job not found or unauthorized',
+        result: 'Job does not belong to your company'
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'Get job details successfully',
+      result: job
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Get job details failed',
+      result: error.message
+    });
+  }
+});
+
+// Update job (employer only)
+const updateEmployerJob = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const updateData = {
+    ...req.body,
+    minSalary: req.body.minSalary,
+    maxSalary: req.body.maxSalary
+  };
+
+  try {
+    // Get company profile
+    const companyProfile = await CompanyProfile.findOne({ userId: req.user._id });
+
+    if (!companyProfile) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'Company profile not found',
+        result: 'Create a company profile first'
+      });
+    }
+
+    const job = await Job.findOneAndUpdate(
+      { _id: id, companyId: companyProfile._id },
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!job) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'Job not found or unauthorized',
+        result: 'Job does not belong to your company'
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'Job updated successfully',
+      result: job
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Update job failed',
+      result: error.message
+    });
+  }
+});
+
+const getPendingJobs = asyncHandler(async (req, res) => {
+  try {
+    const jobs = await Job.find({ status: 'pending' })
+      .populate('companyId', 'companyName userId') 
+      .sort({ createdAt: -1 });
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'Pending jobs fetched successfully',
+      result: jobs
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Failed to fetch pending jobs',
+      result: error.message
+    });
+  }
+});
+
+const updateJobStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  
+  try {
+    const job = await Job.findById(id).populate('companyId', 'userId');
+    
+    if (!job) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'Job not found'
+      });
+    }
+
+    job.status = status;
+    await job.save();
+
+    if (job.companyId && job.companyId.userId) {
+      const notification = new Notification({
+        userId: job.companyId.userId, 
+        message: `Your job "${job.title}" has been ${status}`,
+        type: 'system'
+      });
+      await notification.save();
+    }
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: `Job ${status} successfully`,
+      result: job
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Failed to update job status',
+      result: error.message
+    });
+  }
+});
+
 export {
   getAllJobs,
   getJobDetails,
@@ -561,5 +762,10 @@ export {
   getAppliedJobs,
   addFavoriteJob,
   removeFavoriteJob,
-  createJob
+  createJob,
+  getEmployerJobs,
+  getEmployerJobDetails,
+  updateEmployerJob,
+  getPendingJobs,
+  updateJobStatus
 }; 
