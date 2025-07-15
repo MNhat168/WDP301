@@ -297,15 +297,112 @@ const getUserUsageStats = asyncHandler(async (req, res) => {
     const user = await User.findById(_id);
     const subscription = await UserSubscription.findActiveByUserId(_id);
     
+    // Import models for counting actual records
+    const Application = (await import('../models/Application.js')).default;
+    const Job = (await import('../models/Job.js')).default;
+    const CompanyProfile = (await import('../models/CompanyProfile.js')).default;
+
+    // Count actual applications from database
+    const actualApplicationCount = await Application.countDocuments({ userId: _id });
+    
+    // Count actual job postings (if employer)
+    let actualJobPostingCount = 0;
+    const companyProfile = await CompanyProfile.findOne({ userId: _id });
+    if (companyProfile) {
+      actualJobPostingCount = await Job.countDocuments({ companyId: companyProfile._id });
+    }
+
     const stats = {
-      user: user.getUsageStats(),
+      user: {
+        ...user.getUsageStats(),
+        actualCounts: {
+          applications: actualApplicationCount,
+          jobPostings: actualJobPostingCount,
+          favoriteJobs: user.favoriteJobs.length
+        }
+      },
       subscription: subscription ? {
         packageType: subscription.packageType,
-        remainingJobPostings: subscription.getRemainingJobPostings(),
-        remainingApplications: subscription.getRemainingApplications(),
+        status: subscription.status,
+        daysRemaining: subscription.daysRemaining,
+        isActive: subscription.isActive,
+        applications: {
+          used: subscription.usageStats.applicationsUsed,
+          actual: actualApplicationCount,
+          limit: subscription.packageType === 'enterprise' ? -1 : 
+            (subscription.packageType === 'premium' ? 50 : 
+             subscription.packageType === 'basic' ? 10 : 0),
+          remaining: subscription.getRemainingApplications(),
+          canApply: subscription.canApplyToJob(),
+          needsSync: subscription.usageStats.applicationsUsed !== actualApplicationCount
+        },
+        jobPostings: {
+          used: subscription.usageStats.jobPostingsUsed,
+          actual: actualJobPostingCount,
+          limit: subscription.packageType === 'enterprise' ? -1 : 
+            (subscription.packageType === 'premium' ? 20 : 
+             subscription.packageType === 'basic' ? 5 : 0),
+          remaining: subscription.getRemainingJobPostings(),
+          canPost: subscription.canPostJob(),
+          needsSync: subscription.usageStats.jobPostingsUsed !== actualJobPostingCount
+        },
+        features: {
+          hasUnlimitedApplications: subscription.packageType === 'enterprise',
+          hasPriorityListing: ['premium', 'enterprise'].includes(subscription.packageType),
+          canSeeJobViewers: ['premium', 'enterprise'].includes(subscription.packageType),
+          hasAdvancedFilters: ['premium', 'enterprise'].includes(subscription.packageType),
+          canDirectMessage: ['premium', 'enterprise'].includes(subscription.packageType)
+        },
         usageStats: subscription.usageStats,
-        daysRemaining: subscription.daysRemaining
-      } : null
+        lastUsed: subscription.usageStats.lastUsedDate
+      } : {
+        packageType: 'free',
+        status: 'none',
+        daysRemaining: 0,
+        isActive: false,
+        applications: {
+          used: user.usageLimits.monthlyApplications,
+          actual: actualApplicationCount,
+          limit: 5, // Free tier limit
+          remaining: Math.max(0, 5 - user.usageLimits.monthlyApplications),
+          canApply: user.usageLimits.monthlyApplications < 5,
+          needsSync: user.usageLimits.monthlyApplications !== actualApplicationCount
+        },
+        jobPostings: {
+          used: 0,
+          actual: actualJobPostingCount,
+          limit: 0, // Free users can't post jobs
+          remaining: 0,
+          canPost: false,
+          needsSync: false
+        },
+        features: {
+          hasUnlimitedApplications: false,
+          hasPriorityListing: false,
+          canSeeJobViewers: false,
+          hasAdvancedFilters: false,
+          canDirectMessage: false
+        },
+        lastUsed: user.usageLimits.lastResetDate
+      },
+      analytics: {
+        profileViews: user.analytics.profileViews,
+        cvDownloads: user.analytics.cvDownloads,
+        totalJobApplications: user.analytics.jobApplications,
+        lastActivity: user.analytics.lastActivityDate,
+        monthlyViews: user.analytics.monthlyViews
+      },
+      syncStatus: {
+        needsApplicationSync: subscription ? 
+          subscription.usageStats.applicationsUsed !== actualApplicationCount :
+          user.usageLimits.monthlyApplications !== actualApplicationCount,
+        needsJobPostingSync: subscription ? 
+          subscription.usageStats.jobPostingsUsed !== actualJobPostingCount : false,
+        lastSyncRecommended: subscription ? 
+          subscription.usageStats.applicationsUsed !== actualApplicationCount ||
+          subscription.usageStats.jobPostingsUsed !== actualJobPostingCount :
+          user.usageLimits.monthlyApplications !== actualApplicationCount
+      }
     };
 
     return res.status(200).json({
@@ -320,6 +417,96 @@ const getUserUsageStats = asyncHandler(async (req, res) => {
       code: 400,
       message: 'Get user usage stats failed',
       result: error.message
+    });
+  }
+});
+
+// Sync user counters with actual database records  
+const syncUserCounters = asyncHandler(async (req, res) => {
+  const { _id } = req.user;
+  
+  try {
+    const user = await User.findById(_id);
+    const subscription = await UserSubscription.findActiveByUserId(_id);
+    
+    // Import models for counting
+    const Application = (await import('../models/Application.js')).default;
+    const Job = (await import('../models/Job.js')).default;
+    const CompanyProfile = (await import('../models/CompanyProfile.js')).default;
+
+    // Count actual records
+    const actualApplicationCount = await Application.countDocuments({ userId: _id });
+    let actualJobPostingCount = 0;
+    
+    const companyProfile = await CompanyProfile.findOne({ userId: _id });
+    if (companyProfile) {
+      actualJobPostingCount = await Job.countDocuments({ companyId: companyProfile._id });
+    }
+
+    let syncResult = {
+      userId: _id,
+      actualCounts: {
+        applications: actualApplicationCount,
+        jobPostings: actualJobPostingCount
+      }
+    };
+
+    if (subscription) {
+      // Update subscription counters
+      const oldAppCount = subscription.usageStats.applicationsUsed;
+      const oldJobCount = subscription.usageStats.jobPostingsUsed;
+      
+      subscription.usageStats.applicationsUsed = actualApplicationCount;
+      subscription.usageStats.jobPostingsUsed = actualJobPostingCount;
+      subscription.usageStats.lastUsedDate = new Date();
+      
+      await subscription.save();
+      
+      syncResult.subscription = {
+        packageType: subscription.packageType,
+        applications: {
+          oldCount: oldAppCount,
+          newCount: actualApplicationCount,
+          synced: true
+        },
+        jobPostings: {
+          oldCount: oldJobCount,
+          newCount: actualJobPostingCount,
+          synced: true
+        }
+      };
+    } else {
+      // Update free tier user counters
+      const oldAppCount = user.usageLimits.monthlyApplications;
+      const oldAnalyticsCount = user.analytics.jobApplications;
+      
+      user.usageLimits.monthlyApplications = actualApplicationCount;
+      user.analytics.jobApplications = actualApplicationCount;
+      
+      await user.save();
+      
+      syncResult.freeTier = {
+        applications: {
+          oldMonthlyCount: oldAppCount,
+          oldAnalyticsCount: oldAnalyticsCount,
+          newCount: actualApplicationCount,
+          synced: true
+        }
+      };
+    }
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'User counters synced successfully',
+      result: syncResult
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      code: 500,
+      message: 'Failed to sync user counters',
+      error: error.message
     });
   }
 });
@@ -373,5 +560,6 @@ export {
   upgradeSubscription,
   cancelSubscription,
   getUserUsageStats,
+  syncUserCounters,
   getSubscriptionAnalytics
 }; 

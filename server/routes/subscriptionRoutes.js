@@ -7,6 +7,7 @@ import {
   upgradeSubscription,
   cancelSubscription,
   getUserUsageStats,
+  syncUserCounters,
   getSubscriptionAnalytics
 } from '../controllers/subscriptionController.js';
 
@@ -21,6 +22,7 @@ router.use(verifyAccessToken);
 // User subscription management
 router.get('/my-subscription', getUserSubscription);
 router.get('/usage-stats', getUserUsageStats);
+router.post('/sync-counters', syncUserCounters);
 router.post('/subscribe', subscribeToPlan);
 router.patch('/upgrade', upgradeSubscription);
 router.patch('/cancel', cancelSubscription);

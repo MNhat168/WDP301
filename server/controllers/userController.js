@@ -314,16 +314,21 @@ const verifyOtp = asyncHandler(async(req, res) => {
         });
     }
 
-    user.otp = undefined;
-    user.otpExpire = undefined;
-    user.isActive = true;
-    await user.save();
+    // FIX: Use findByIdAndUpdate to avoid triggering pre-save hook
+    const updatedUser = await User.findByIdAndUpdate(
+        user._id,
+        {
+            $unset: { otp: 1, otpExpire: 1 },
+            $set: { isActive: true }
+        },
+        { new: true }
+    );
 
     return res.status(200).json({
         status: true,
         code: 200,
         message: 'OTP verified successfully',
-        result: user,
+        result: updatedUser,
     });
 });
 
@@ -427,6 +432,203 @@ const getCurrent = asyncHandler(async(req, res) => {
         message : user ? 'User found' : 'User not found',
         result: result
     })
+})
+
+// Get user subscription limits and usage information
+const getUserLimits = asyncHandler(async(req, res) => {
+    const { _id } = req.user
+    const user = await User.findById(_id)
+    
+    if (!user) {
+        return res.status(404).json({
+            status: false,
+            code: 404,
+            message: 'User not found'
+        })
+    }
+
+    try {
+        const subscription = await user.getActiveSubscription()
+        
+        const limitsInfo = subscription ? {
+            subscription: {
+                type: subscription.packageType,
+                status: subscription.status,
+                startDate: subscription.startDate,
+                expiryDate: subscription.expiryDate,
+                daysRemaining: subscription.daysRemaining,
+                autoRenew: subscription.autoRenew,
+                isActive: subscription.isActive
+            },
+            applications: {
+                used: subscription.usageStats.applicationsUsed,
+                limit: subscription.packageType === 'enterprise' ? -1 : 
+                  (subscription.packageType === 'premium' ? 50 : 
+                   subscription.packageType === 'basic' ? 10 : 0),
+                remaining: subscription.getRemainingApplications(),
+                canApply: subscription.canApplyToJob()
+            },
+            jobPostings: {
+                used: subscription.usageStats.jobPostingsUsed,
+                limit: subscription.packageType === 'enterprise' ? -1 : 
+                  (subscription.packageType === 'premium' ? 20 : 
+                   subscription.packageType === 'basic' ? 5 : 0),
+                remaining: subscription.getRemainingJobPostings(),
+                canPost: subscription.canPostJob()
+            },
+            features: {
+                hasUnlimitedApplications: subscription.packageType === 'enterprise',
+                hasPriorityListing: ['premium', 'enterprise'].includes(subscription.packageType),
+                canSeeJobViewers: ['premium', 'enterprise'].includes(subscription.packageType),
+                hasAdvancedFilters: ['premium', 'enterprise'].includes(subscription.packageType),
+                canDirectMessage: ['premium', 'enterprise'].includes(subscription.packageType)
+            },
+            lastUsed: subscription.usageStats.lastUsedDate
+        } : {
+            subscription: {
+                type: 'free',
+                status: 'none',
+                startDate: null,
+                expiryDate: null,
+                daysRemaining: 0,
+                autoRenew: false,
+                isActive: false
+            },
+            applications: {
+                used: user.usageLimits.monthlyApplications,
+                limit: 5, // Free tier limit
+                remaining: Math.max(0, 5 - user.usageLimits.monthlyApplications),
+                canApply: user.usageLimits.monthlyApplications < 5
+            },
+            jobPostings: {
+                used: 0,
+                limit: 0, // Free users can't post jobs
+                remaining: 0,
+                canPost: false
+            },
+            features: {
+                hasUnlimitedApplications: false,
+                hasPriorityListing: false,
+                canSeeJobViewers: false,
+                hasAdvancedFilters: false,
+                canDirectMessage: false
+            },
+            lastUsed: user.usageLimits.lastResetDate
+        }
+
+        // Add user analytics
+        limitsInfo.analytics = {
+            profileViews: user.analytics.profileViews,
+            cvDownloads: user.analytics.cvDownloads,
+            totalJobApplications: user.analytics.jobApplications,
+            lastActivity: user.analytics.lastActivityDate,
+            monthlyViews: user.analytics.monthlyViews
+        }
+
+        // Add favorite jobs info
+        limitsInfo.favorites = {
+            count: user.favoriteJobs.length,
+            limit: 50, // General limit for favorites
+            canAddMore: user.favoriteJobs.length < 50
+        }
+
+        return res.status(200).json({
+            status: true,
+            code: 200,
+            message: 'User limits retrieved successfully',
+            result: limitsInfo
+        })
+        
+    } catch (error) {
+        return res.status(500).json({
+            status: false,
+            code: 500,
+            message: 'Failed to get user limits',
+            error: error.message
+        })
+    }
+})
+
+// Check if user can perform specific action
+const checkUserPermission = asyncHandler(async(req, res) => {
+    const { _id } = req.user
+    const { action } = req.params // 'apply', 'post-job', 'add-favorite', etc.
+    
+    const user = await User.findById(_id)
+    
+    if (!user) {
+        return res.status(404).json({
+            status: false,
+            code: 404,
+            message: 'User not found'
+        })
+    }
+
+    try {
+        const subscription = await user.getActiveSubscription()
+        let canPerform = false
+        let message = ''
+        let upgradeRequired = false
+
+        switch (action) {
+            case 'apply':
+                if (subscription) {
+                    canPerform = subscription.canApplyToJob()
+                    message = canPerform ? 'Can apply to job' : 
+                        `Application limit reached for ${subscription.packageType} plan`
+                } else {
+                    canPerform = user.usageLimits.monthlyApplications < 5
+                    message = canPerform ? 'Can apply to job (free tier)' : 
+                        'Monthly application limit reached. Upgrade to apply to more jobs.'
+                    upgradeRequired = !canPerform
+                }
+                break
+
+            case 'post-job':
+                if (subscription) {
+                    canPerform = subscription.canPostJob()
+                    message = canPerform ? 'Can post job' : 
+                        `Job posting limit reached for ${subscription.packageType} plan`
+                } else {
+                    canPerform = false
+                    message = 'Subscription required to post jobs'
+                    upgradeRequired = true
+                }
+                break
+
+            case 'add-favorite':
+                canPerform = user.favoriteJobs.length < 50
+                message = canPerform ? 'Can add to favorites' : 'Favorites limit reached'
+                break
+
+            default:
+                return res.status(400).json({
+                    status: false,
+                    code: 400,
+                    message: 'Invalid action specified'
+                })
+        }
+
+        return res.status(200).json({
+            status: true,
+            code: 200,
+            message: message,
+            result: {
+                action: action,
+                canPerform: canPerform,
+                upgradeRequired: upgradeRequired,
+                subscriptionType: subscription ? subscription.packageType : 'free'
+            }
+        })
+        
+    } catch (error) {
+        return res.status(500).json({
+            status: false,
+            code: 500,
+            message: 'Failed to check user permission',
+            error: error.message
+        })
+    }
 })
 
 const refreshAccessToken = asyncHandler(async(req, res) => {
@@ -776,10 +978,22 @@ const getFavoriteJobs = asyncHandler(async (req, res) => {
             }
           });
 
-      const favoriteJobs = user.favoriteJobs.map(fav => ({
-        ...fav.jobId.toObject(),
-        favoriteDate: fav.favoriteDate
-      }));
+        if (!user) {
+            return res.status(404).json({
+                status: false,
+                code: 404,
+                message: 'User not found',
+                result: 'User not found'
+            });
+        }
+
+        // Filter out null jobs (deleted jobs) and map the rest
+        const favoriteJobs = user.favoriteJobs
+            .filter(fav => fav.jobId) // Only include if job still exists
+            .map(fav => ({
+                ...fav.jobId.toObject(),
+                favoriteDate: fav.favoriteDate
+            }));
   
       return res.status(200).json({
         status: true,
@@ -788,11 +1002,12 @@ const getFavoriteJobs = asyncHandler(async (req, res) => {
         result: favoriteJobs
       });
     } catch (error) {
-      return res.status(400).json({
-        status: false,
-        code: 400,
-        message: 'Get favorite jobs failed',
-        result: error.message
+        console.error('Get favorite jobs error:', error);
+        return res.status(400).json({
+            status: false,
+            code: 400,
+            message: 'Get favorite jobs failed',
+            result: error.message
         });
     }
 });
@@ -919,5 +1134,7 @@ export {
     getFavoriteJobs,
     getUserStatsForAdmin,
     getUsersByRole,
-    toggleBanUser
+    toggleBanUser,
+    getUserLimits,
+    checkUserPermission
 };
