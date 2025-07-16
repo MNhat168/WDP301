@@ -638,6 +638,48 @@ const getEmployerJobDetails = asyncHandler(async (req, res) => {
   }
 });
 
+// Get favorite status of a job for the current user
+const getFavoriteStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { _id } = req.user;
+
+  // Validate ObjectId format
+  if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Invalid job ID format',
+      result: 'Job ID must be a valid ObjectId'
+    });
+  }
+
+  try {
+    const user = await User.findById(_id);
+    if (!user) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'User not found',
+        result: 'User not found'
+      });
+    }
+    const isFavorite = user.favoriteJobs.some(fav => fav.jobId.toString() === id);
+    return res.status(200).json({
+      status: isFavorite,
+      code: 200,
+      message: isFavorite ? 'Job is in favorites' : 'Job is not in favorites',
+      result: isFavorite
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Get job details failed',
+      result: error.message
+    });
+  }
+});
+
 // Update job (employer only)
 const updateEmployerJob = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -750,6 +792,7 @@ const updateJobStatus = asyncHandler(async (req, res) => {
       status: false,
       code: 400,
       message: 'Failed to update job status',
+      message: 'Get favorite status failed',
       result: error.message
     });
   }
@@ -767,5 +810,6 @@ export {
   getEmployerJobDetails,
   updateEmployerJob,
   getPendingJobs,
-  updateJobStatus
+  updateJobStatus,
+  getFavoriteStatus
 }; 

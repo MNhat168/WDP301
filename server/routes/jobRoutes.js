@@ -10,7 +10,9 @@ import {
   addFavoriteJob,
   removeFavoriteJob,
   getPendingJobs,
-  updateJobStatus
+  updateJobStatus,
+  createJob,
+  getFavoriteStatus
 } from '../controllers/jobController.js';
 
 const router = express.Router();
@@ -25,6 +27,7 @@ router.use(verifyAccessToken);
 
 // All authenticated user routes
 router.get('/applied', getAppliedJobs);
+router.get('/:id/favorite-status', getFavoriteStatus);
 
 // Employee only routes
 
