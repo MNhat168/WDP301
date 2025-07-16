@@ -9,7 +9,7 @@ import Subscription from '../models/Subscription.js';
 import UserSubscription from '../models/UserSubscription.js';
 
 // Đăng ký cho Job Seeker
-const registerJobseeker = asyncHandler(async(req, res) => {
+const registerJobseeker = asyncHandler(async (req, res) => {
     const { email, password, username, dateOfBirth, phone, firstname, lastname } = req.body;
     console.log(req.body);
 
@@ -22,7 +22,7 @@ const registerJobseeker = asyncHandler(async(req, res) => {
         });
 
     const user = await User.findOne({ email, phone });
-    if (user) 
+    if (user)
         throw new Error('User already exists');
     else {
         // Tìm roleId với tên 'ROLE_JOBSEEKER'
@@ -147,7 +147,7 @@ const registerJobseeker = asyncHandler(async(req, res) => {
 });
 
 // Đăng ký cho Employer
-const registerEmployer = asyncHandler(async(req, res) => {
+const registerEmployer = asyncHandler(async (req, res) => {
     const { email, password, username, dateOfBirth, phone, firstname, lastname, companyName, companyDescription } = req.body;
     console.log(req.body);
 
@@ -160,7 +160,7 @@ const registerEmployer = asyncHandler(async(req, res) => {
         });
 
     const user = await User.findOne({ email, phone });
-    if (user) 
+    if (user)
         throw new Error('User already exists');
     else {
         // Tìm roleId với tên 'ROLE_EMPLOYEE'
@@ -284,8 +284,8 @@ const registerEmployer = asyncHandler(async(req, res) => {
     }
 });
 
-const verifyOtp = asyncHandler(async(req, res) => {
-    const { email} = req.params;
+const verifyOtp = asyncHandler(async (req, res) => {
+    const { email } = req.params;
     const { otp } = req.body;
     if (!email || !otp)
         return res.status(400).json({
@@ -335,19 +335,19 @@ const verifyOtp = asyncHandler(async(req, res) => {
 
 // RefreshToken => cấp mới accessToken
 // AccessToken => Xác thực người dùng
-const login = asyncHandler(async(req, res) => {
+const login = asyncHandler(async (req, res) => {
     const { email, password } = req.body
-    if(!email || !password)
-    return res.status(400).json({
-        status: false,
-        code: 400,
-        message: 'Invalid input',
-        result: "Missing input"
-    })
+    if (!email || !password)
+        return res.status(400).json({
+            status: false,
+            code: 400,
+            message: 'Invalid input',
+            result: "Missing input"
+        })
 
     // Populate role để lấy roleName
     const response = await User.findOne({ email }).populate('roleId')
-    if(!response) {
+    if (!response) {
         return res.status(404).json({
             status: false,
             code: 404,
@@ -356,7 +356,7 @@ const login = asyncHandler(async(req, res) => {
         })
     }
 
-    if(response.isBlocked==true){
+    if (response.isBlocked == true) {
         return res.status(401).json({
             status: false,
             code: 401,
@@ -365,7 +365,7 @@ const login = asyncHandler(async(req, res) => {
         })
     }
 
-    if(response.isActive==false){
+    if (response.isActive == false) {
         return res.status(401).json({
             status: false,
             code: 401,
@@ -378,8 +378,8 @@ const login = asyncHandler(async(req, res) => {
     if (response) {
         companyInfo = await CompanyProfile.findOne({ userId: response._id })
     }
-    
-    if(response && await response.isCorrectPassword(password)){
+
+    if (response && await response.isCorrectPassword(password)) {
         //Tách password và role ra khỏi response
         const { password, refreshToken, ...userData } = response.toObject()
         userData.companyInfo = companyInfo;
@@ -388,23 +388,23 @@ const login = asyncHandler(async(req, res) => {
         //Tạo refresh token
         const newrefreshToken = generateRefreshToken(response._id)
         //Lưu refreshToken vào db
-        await User.findByIdAndUpdate(response._id, {refreshToken: newrefreshToken} , {new: true})
+        await User.findByIdAndUpdate(response._id, { refreshToken: newrefreshToken }, { new: true })
         //Lưu refreshToken vào cookie
-        res.cookie('refreshToken', newrefreshToken, {httpOnly: true, maxAge: 720000})
+        res.cookie('refreshToken', newrefreshToken, { httpOnly: true, maxAge: 720000 })
         return res.status(200).json({
             success: true,
             code: 200,
             accessToken,
-            userData
-        })
-    }else{
+            userData 
+        });
+    } else {
         throw new Error('Invalid credential')
     }
 })
 
-const authGoogle = asyncHandler(async(req, res) => {
+const authGoogle = asyncHandler(async (req, res) => {
     const accessToken = generateAccessToken(req.user._id, req.user.role)
-    console.log("CONTROLLER___:",accessToken)
+    console.log("CONTROLLER___:", accessToken)
     return res.status(200).json({
         success: true,
         code: 200,
@@ -412,33 +412,33 @@ const authGoogle = asyncHandler(async(req, res) => {
     })
 })
 
-const getCurrent = asyncHandler(async(req, res) => {
+const getCurrent = asyncHandler(async (req, res) => {
     const { _id } = req.user
     const user = await User.findById(_id).select('-refreshToken -password').populate('roleId')
-    
+
     let companyInfo = null
     if (user) {
         companyInfo = await CompanyProfile.findOne({ userId: _id })
     }
-    
+
     const result = user ? {
         ...user.toObject(),
         companyInfo: companyInfo || null
     } : null
-    
+
     return res.status(200).json({
         status: user ? true : false,
         code: user ? 200 : 400,
-        message : user ? 'User found' : 'User not found',
+        message: user ? 'User found' : 'User not found',
         result: result
     })
 })
 
 // Get user subscription limits and usage information
-const getUserLimits = asyncHandler(async(req, res) => {
+const getUserLimits = asyncHandler(async (req, res) => {
     const { _id } = req.user
     const user = await User.findById(_id)
-    
+
     if (!user) {
         return res.status(404).json({
             status: false,
@@ -449,7 +449,7 @@ const getUserLimits = asyncHandler(async(req, res) => {
 
     try {
         const subscription = await user.getActiveSubscription()
-        
+
         const limitsInfo = subscription ? {
             subscription: {
                 type: subscription.packageType,
@@ -462,17 +462,17 @@ const getUserLimits = asyncHandler(async(req, res) => {
             },
             applications: {
                 used: subscription.usageStats.applicationsUsed,
-                limit: subscription.packageType === 'enterprise' ? -1 : 
-                  (subscription.packageType === 'premium' ? 50 : 
-                   subscription.packageType === 'basic' ? 10 : 0),
+                limit: subscription.packageType === 'enterprise' ? -1 :
+                    (subscription.packageType === 'premium' ? 50 :
+                        subscription.packageType === 'basic' ? 10 : 0),
                 remaining: subscription.getRemainingApplications(),
                 canApply: subscription.canApplyToJob()
             },
             jobPostings: {
                 used: subscription.usageStats.jobPostingsUsed,
-                limit: subscription.packageType === 'enterprise' ? -1 : 
-                  (subscription.packageType === 'premium' ? 20 : 
-                   subscription.packageType === 'basic' ? 5 : 0),
+                limit: subscription.packageType === 'enterprise' ? -1 :
+                    (subscription.packageType === 'premium' ? 20 :
+                        subscription.packageType === 'basic' ? 5 : 0),
                 remaining: subscription.getRemainingJobPostings(),
                 canPost: subscription.canPostJob()
             },
@@ -538,7 +538,7 @@ const getUserLimits = asyncHandler(async(req, res) => {
             message: 'User limits retrieved successfully',
             result: limitsInfo
         })
-        
+
     } catch (error) {
         return res.status(500).json({
             status: false,
@@ -550,12 +550,12 @@ const getUserLimits = asyncHandler(async(req, res) => {
 })
 
 // Check if user can perform specific action
-const checkUserPermission = asyncHandler(async(req, res) => {
+const checkUserPermission = asyncHandler(async (req, res) => {
     const { _id } = req.user
     const { action } = req.params // 'apply', 'post-job', 'add-favorite', etc.
-    
+
     const user = await User.findById(_id)
-    
+
     if (!user) {
         return res.status(404).json({
             status: false,
@@ -574,11 +574,11 @@ const checkUserPermission = asyncHandler(async(req, res) => {
             case 'apply':
                 if (subscription) {
                     canPerform = subscription.canApplyToJob()
-                    message = canPerform ? 'Can apply to job' : 
+                    message = canPerform ? 'Can apply to job' :
                         `Application limit reached for ${subscription.packageType} plan`
                 } else {
                     canPerform = user.usageLimits.monthlyApplications < 5
-                    message = canPerform ? 'Can apply to job (free tier)' : 
+                    message = canPerform ? 'Can apply to job (free tier)' :
                         'Monthly application limit reached. Upgrade to apply to more jobs.'
                     upgradeRequired = !canPerform
                 }
@@ -587,7 +587,7 @@ const checkUserPermission = asyncHandler(async(req, res) => {
             case 'post-job':
                 if (subscription) {
                     canPerform = subscription.canPostJob()
-                    message = canPerform ? 'Can post job' : 
+                    message = canPerform ? 'Can post job' :
                         `Job posting limit reached for ${subscription.packageType} plan`
                 } else {
                     canPerform = false
@@ -620,7 +620,7 @@ const checkUserPermission = asyncHandler(async(req, res) => {
                 subscriptionType: subscription ? subscription.packageType : 'free'
             }
         })
-        
+
     } catch (error) {
         return res.status(500).json({
             status: false,
@@ -631,26 +631,26 @@ const checkUserPermission = asyncHandler(async(req, res) => {
     }
 })
 
-const refreshAccessToken = asyncHandler(async(req, res) => {
+const refreshAccessToken = asyncHandler(async (req, res) => {
     const cookie = req.cookies
     // const { _id } = req
-    if( !cookie && cookie.refreshToken) throw new Error('No refresh Token in cookie')
+    if (!cookie && cookie.refreshToken) throw new Error('No refresh Token in cookie')
 
     const rs = await jwt.verify(cookie.refreshToken, process.env.JWT_SECRET)
     const response = await User.findOne({ _id: rs._id, refreshToken: cookie.refreshToken })
     return res.status(200).json({
         status: response ? true : false,
-        code: response? 200 : 400,
-        message: response? 'Refresh token valid' : 'Refresh token invalid',
+        code: response ? 200 : 400,
+        message: response ? 'Refresh token valid' : 'Refresh token invalid',
         result: response ? generateAccessToken(response._id, response.role) : 'Refresh Token invalid'
     })
 })
 
-const logout = asyncHandler(async(req, res) => {
+const logout = asyncHandler(async (req, res) => {
     const cookie = req.cookies
-    if(!cookie || !cookie.refreshToken) throw new Error('No refresh token in cookies')
+    if (!cookie || !cookie.refreshToken) throw new Error('No refresh token in cookies')
     //Xóa refresh token ở db
-    await User.findOneAndUpdate({refreshToken: cookie.refreshToken}, {refreshToken: ''}, {new: true})
+    await User.findOneAndUpdate({ refreshToken: cookie.refreshToken }, { refreshToken: '' }, { new: true })
     //Xóa refresh token ở trình duyệt
     res.clearCookie('refreshToken', {
         httpOnly: true,
@@ -673,15 +673,15 @@ const logout = asyncHandler(async(req, res) => {
 //Change password 
 
 
-const forgotPassword = asyncHandler(async(req, res) => {
+const forgotPassword = asyncHandler(async (req, res) => {
     const { email } = req.body;
     if (!email) throw new Error('Missing email');
     const user = await User.findOne({ email });
-    console.log({email})
+    console.log({ email })
     if (!user) throw new Error('User not found!! Invalid email');
     const otp = user.createOtp()
     await user.save();
-  
+
     let type = 'forgot_password'
     // Send mail
     const html = `
@@ -751,19 +751,19 @@ const forgotPassword = asyncHandler(async(req, res) => {
 
     const data = { email, html, type };
     await sendMail(data);
-    
+
     return res.status(200).json({
         status: true,
         code: 200,
         message: 'Send mail successfully',
-        result:  'Send mail successfully',
+        result: 'Send mail successfully',
     });
 });
 
-const verifyOtpAndResetPassword = asyncHandler(async(req, res) => {
-    const { email} = req.params;
+const verifyOtpAndResetPassword = asyncHandler(async (req, res) => {
+    const { email } = req.params;
     const { otp, newPassword } = req.body;
-    console.log({otp, newPassword});
+    console.log({ otp, newPassword });
     if (!email || !otp || !newPassword) throw new Error('Missing required fields')
     const user = await User.findOne({ email });
     if (!user) throw new Error('User not found');
@@ -776,26 +776,26 @@ const verifyOtpAndResetPassword = asyncHandler(async(req, res) => {
     return res.status(200).json({
         status: user ? true : false,
         code: user ? 200 : 400,
-        message: user? 'Update password' : 'Something went wrong',
+        message: user ? 'Update password' : 'Something went wrong',
         result: user,
     })
 })
 
 //Lấy tất cả người dùng
-const getAllUser = asyncHandler(async(req, res) => {
+const getAllUser = asyncHandler(async (req, res) => {
     const response = await User.find().select('-refreshToken -password -role').populate('organizerRef')
     return res.status(200).json({
         status: response ? true : false,
-        code: response ? 200 : 400, 
-        message: response ? 'Get all users' : 'Can not get all users', 
+        code: response ? 200 : 400,
+        message: response ? 'Get all users' : 'Can not get all users',
         result: response
     })
 })
 
 //Xóa tài khoản
-const deleteUser = asyncHandler(async(req, res) => {
-    const {_id} = req.query
-    if(!_id) throw new Error('Please modified Id!!!')
+const deleteUser = asyncHandler(async (req, res) => {
+    const { _id } = req.query
+    if (!_id) throw new Error('Please modified Id!!!')
     const response = await User.findByIdAndDelete(_id)
     return res.status(200).json({
         status: response ? true : false,
@@ -806,10 +806,10 @@ const deleteUser = asyncHandler(async(req, res) => {
 })
 
 //Cập nhập tài khoản người dùng hiện tại
-const updateUser = asyncHandler(async(req, res) => {
-    const {_id} = req.user
-    if(!_id || Object.keys(req.body).length === 0) throw new Error('Please modified information!!!')
-    const response = await User.findByIdAndUpdate(_id, req.body, {new: true}).select('-password -role')
+const updateUser = asyncHandler(async (req, res) => {
+    const { _id } = req.user
+    if (!_id || Object.keys(req.body).length === 0) throw new Error('Please modified information!!!')
+    const response = await User.findByIdAndUpdate(_id, req.body, { new: true }).select('-password -role')
     return res.status(200).json({
         status: response ? true : false,
         code: response ? 200 : 400,
@@ -819,10 +819,10 @@ const updateUser = asyncHandler(async(req, res) => {
 })
 
 //Tạo tài khoản người dùng bởi admin
-const createAccountbyAdmin = asyncHandler(async(req, res) => {
+const createAccountbyAdmin = asyncHandler(async (req, res) => {
     const { username, email, password, role } = req.body
-    if(Object.keys(req.body).length === 0) throw new Error('Please modified information!!!')
-    const response = await User.create({username, email, password, role})
+    if (Object.keys(req.body).length === 0) throw new Error('Please modified information!!!')
+    const response = await User.create({ username, email, password, role })
     return res.status(200).json({
         status: response ? true : false,
         code: response ? 200 : 400,
@@ -833,10 +833,10 @@ const createAccountbyAdmin = asyncHandler(async(req, res) => {
 
 
 //Cập nhập tài khoản người dùng bởi admin
-const updateUserbyAdmin = asyncHandler(async(req, res) => {
+const updateUserbyAdmin = asyncHandler(async (req, res) => {
     const { _id } = req.params
-    if(Object.keys(req.body).length === 0) throw new Error('Please modified information!!!')
-    const response = await User.findByIdAndUpdate(_id, req.body, {new: true}).select('-password -role -refreshToken')
+    if (Object.keys(req.body).length === 0) throw new Error('Please modified information!!!')
+    const response = await User.findByIdAndUpdate(_id, req.body, { new: true }).select('-password -role -refreshToken')
     return res.status(200).json({
         status: response ? true : false,
         code: response ? 200 : 400,
@@ -846,12 +846,12 @@ const updateUserbyAdmin = asyncHandler(async(req, res) => {
 })
 
 //Cấm tài khoản người dùng bởi user
-const banUserByAdmin = asyncHandler(async(req, res) => {
+const banUserByAdmin = asyncHandler(async (req, res) => {
     const { uid } = req.params
-    if(!uid) throw new Error('Please modified Id!!!')
+    if (!uid) throw new Error('Please modified Id!!!')
     const user = await User.findById(uid).select('-password -role -refreshToken')
     const isBlocked = !user.isBlocked
-    const response = await User.findByIdAndUpdate(uid, {isBlocked}, {new: true}).select('-password -role -refreshToken')
+    const response = await User.findByIdAndUpdate(uid, { isBlocked }, { new: true }).select('-password -role -refreshToken')
     return res.status(200).json({
         status: response ? true : false,
         code: response ? 200 : 400,
@@ -861,45 +861,45 @@ const banUserByAdmin = asyncHandler(async(req, res) => {
 })
 
 
-const uploadImage = asyncHandler(async(req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ 
-      status: false,
-      message: 'No file uploaded' 
-    });
-  }
-  
-  try {
-    const { _id } = req.user;
-    // Return the secure URL directly
-    const imageUrl = req.file.path;
-    
-    const response = await User.findByIdAndUpdate(
-      _id, 
-      {$set: {images: imageUrl}}, 
-      {new: true}
-    );
-    
-    return res.status(200).json({
-      status: true,
-      code: 200,
-      message: 'Image uploaded successfully',
-      result: response
-    });
-  } catch (error) {
-    console.error('Upload error:', error);
-    return res.status(500).json({
-      status: false,
-      message: 'Image upload failed'
-    });
-  }
+const uploadImage = asyncHandler(async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({
+            status: false,
+            message: 'No file uploaded'
+        });
+    }
+
+    try {
+        const { _id } = req.user;
+        // Return the secure URL directly
+        const imageUrl = req.file.path;
+
+        const response = await User.findByIdAndUpdate(
+            _id,
+            { $set: { images: imageUrl } },
+            { new: true }
+        );
+
+        return res.status(200).json({
+            status: true,
+            code: 200,
+            message: 'Image uploaded successfully',
+            result: response
+        });
+    } catch (error) {
+        console.error('Upload error:', error);
+        return res.status(500).json({
+            status: false,
+            message: 'Image upload failed'
+        });
+    }
 });
 
 
-const updateRolebyAdmin = asyncHandler(async(req, res) => {
+const updateRolebyAdmin = asyncHandler(async (req, res) => {
     const { _id } = req.params
-    if(!req.body.role) throw new Error('Please modified information!!!')
-    const response = await User.findByIdAndUpdate(_id, {role: req.body.role}, {new: true}).select('-password -role -refreshToken')
+    if (!req.body.role) throw new Error('Please modified information!!!')
+    const response = await User.findByIdAndUpdate(_id, { role: req.body.role }, { new: true }).select('-password -role -refreshToken')
     return res.status(200).json({
         status: response ? true : false,
         code: response ? 200 : 400,
@@ -968,15 +968,15 @@ const changePassword = asyncHandler(async (req, res) => {
 // Get favorite jobs
 const getFavoriteJobs = asyncHandler(async (req, res) => {
     const { _id } = req.user;
-  
+
     try {
         const user = await User.findById(_id).populate({
             path: 'favoriteJobs.jobId',
             populate: {
-              path: 'companyId',
-              select: 'companyName address url'
+                path: 'companyId',
+                select: 'companyName address url'
             }
-          });
+        });
 
         if (!user) {
             return res.status(404).json({
@@ -994,13 +994,13 @@ const getFavoriteJobs = asyncHandler(async (req, res) => {
                 ...fav.jobId.toObject(),
                 favoriteDate: fav.favoriteDate
             }));
-  
-      return res.status(200).json({
-        status: true,
-        code: 200,
-        message: 'Get favorite jobs successfully',
-        result: favoriteJobs
-      });
+
+        return res.status(200).json({
+            status: true,
+            code: 200,
+            message: 'Get favorite jobs successfully',
+            result: favoriteJobs
+        });
     } catch (error) {
         console.error('Get favorite jobs error:', error);
         return res.status(400).json({
@@ -1018,15 +1018,15 @@ const getUserStatsForAdmin = asyncHandler(async (req, res) => {
         const totalUsers = await User.countDocuments();
         const jobSeekerRole = await Role.findOne({ roleName: 'ROLE_JOBSEEKER' });
         const employerRole = await Role.findOne({ roleName: 'ROLE_EMPLOYEE' });
-        
-        const totalJobSeekers = jobSeekerRole 
-            ? await User.countDocuments({ roleId: jobSeekerRole._id }) 
+
+        const totalJobSeekers = jobSeekerRole
+            ? await User.countDocuments({ roleId: jobSeekerRole._id })
             : 0;
-            
-        const totalEmployers = employerRole 
-            ? await User.countDocuments({ roleId: employerRole._id }) 
+
+        const totalEmployers = employerRole
+            ? await User.countDocuments({ roleId: employerRole._id })
             : 0;
-            
+
         const bannedUsers = await User.countDocuments({ isBlocked: true });
 
         res.status(200).json({
@@ -1090,12 +1090,12 @@ const toggleBanUser = asyncHandler(async (req, res) => {
     try {
         const { userId } = req.params;
         const user = await User.findById(userId);
-        
+
         if (!user) return res.status(404).json({ status: false, message: 'User not found' });
-        
+
         user.isBlocked = !user.isBlocked;
         await user.save();
-        
+
         res.status(200).json({
             status: true,
             result: {
@@ -1111,7 +1111,7 @@ const toggleBanUser = asyncHandler(async (req, res) => {
         });
     }
 });
-  
+
 export {
     registerJobseeker,
     registerEmployer,
