@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import Notification from '../models/Notification.js';
 import CompanyProfile from '../models/CompanyProfile.js';
 import asyncHandler from 'express-async-handler';
+import UsageTracker from '../services/usageTracker.js';
 
 // Get all jobs with search and filter options
 const getAllJobs = asyncHandler(async (req, res) => {
@@ -104,7 +105,7 @@ const getAllJobs = asyncHandler(async (req, res) => {
   }
 });
 
-// Get job details
+// Get job details with view tracking
 const getJobDetails = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
@@ -132,6 +133,16 @@ const getJobDetails = asyncHandler(async (req, res) => {
       });
     }
 
+    // Track job view if user is authenticated
+    if (req.user) {
+      await UsageTracker.trackAction(
+        req.user._id, 
+        'job_view', 
+        { jobId: id, companyId: job.companyId._id }, 
+        req
+      );
+    }
+
     // Track job view (increment analytics)
     await job.incrementView();
 
@@ -140,9 +151,10 @@ const getJobDetails = asyncHandler(async (req, res) => {
 
     if (req.user) {
       const user = await User.findById(req.user._id);
-      const isPremium = await user.isPremiumUser();
+      const subscription = await user.getActiveSubscription();
+      const isPremium = subscription && ['premium', 'enterprise'].includes(subscription.packageType);
 
-      if (isPremium && user.premiumFeatures.canSeeJobViewers) {
+      if (isPremium && subscription?.features_config?.canSeeJobViewers) {
         responseData.analytics = job.analytics;
       }
     }
@@ -180,20 +192,25 @@ const applyForJob = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Get user and check subscription
-    const user = await User.findById(_id);
-    const isPremium = await user.isPremiumUser();
+    // Check subscription limits and track usage
+    const usageResult = await UsageTracker.trackAction(
+      _id, 
+      'job_application', 
+      { jobId: id }, 
+      req
+    );
 
-    // Check if user can apply (free tier limits)
-    if (!isPremium && !user.canApplyToJobFree()) {
+    if (!usageResult.success) {
       return res.status(403).json({
         status: false,
         code: 403,
-        message: 'You have reached your monthly application limit. Upgrade to Premium for unlimited applications.',
+        message: usageResult.reason,
         result: {
-          currentUsage: user.usageLimits.monthlyApplications,
-          limit: 5,
-          upgradeRequired: true
+          currentUsage: usageResult.limitInfo.currentUsage,
+          limit: usageResult.limitInfo.limit,
+          remaining: usageResult.limitInfo.remaining,
+          upgradeRequired: usageResult.upgradeRequired,
+          currentTier: usageResult.currentTier
         }
       });
     }
@@ -238,8 +255,13 @@ const applyForJob = asyncHandler(async (req, res) => {
 
     await job.save();
 
-    // Track user application
-    await user.incrementJobApplication();
+    // Track job view
+    await UsageTracker.trackAction(
+      _id, 
+      'job_view', 
+      { jobId: id, action: 'application_submitted' }, 
+      req
+    );
 
     return res.status(200).json({
       status: true,
@@ -247,7 +269,7 @@ const applyForJob = asyncHandler(async (req, res) => {
       message: 'Application submitted successfully',
       result: {
         message: 'Application submitted successfully',
-        remainingApplications: isPremium ? 'unlimited' : (5 - user.usageLimits.monthlyApplications)
+        remainingApplications: usageResult.limitInfo.isUnlimited ? 'unlimited' : usageResult.limitInfo.remaining
       }
     });
   } catch (error) {
@@ -359,28 +381,31 @@ const addFavoriteJob = asyncHandler(async (req, res) => {
   }
 
   try {
-    const user = await User.findById(_id);
-    const isPremium = await user.isPremiumUser();
+    // Check subscription limits and track usage
+    const usageResult = await UsageTracker.trackAction(
+      _id, 
+      'add_favorite', 
+      { jobId: id }, 
+      req
+    );
 
-    // Check if user can add more favorites (free tier limits)
-    if (!isPremium && !user.canAddMoreFavorites()) {
+    if (!usageResult.success) {
       return res.status(403).json({
         status: false,
         code: 403,
-        message: 'You have reached your favorites limit. Upgrade to Premium for unlimited favorites.',
+        message: usageResult.reason,
         result: {
-          currentUsage: user.usageLimits.favoritesCount,
-          limit: 10,
-          upgradeRequired: true
+          currentUsage: usageResult.limitInfo.currentUsage,
+          limit: usageResult.limitInfo.limit,
+          remaining: usageResult.limitInfo.remaining,
+          upgradeRequired: usageResult.upgradeRequired,
+          currentTier: usageResult.currentTier
         }
       });
     }
 
+    const user = await User.findById(_id);
     await user.addFavoriteJob(id);
-
-    // Update favorites count
-    user.usageLimits.favoritesCount = user.favoriteJobs.length;
-    await user.save();
 
     return res.status(200).json({
       status: true,
@@ -388,7 +413,7 @@ const addFavoriteJob = asyncHandler(async (req, res) => {
       message: 'Job added to favorites',
       result: {
         message: 'Job added to favorites',
-        remainingFavorites: isPremium ? 'unlimited' : (10 - user.usageLimits.favoritesCount)
+        remainingFavorites: usageResult.limitInfo.isUnlimited ? 'unlimited' : usageResult.limitInfo.remaining
       }
     });
   } catch (error) {
@@ -420,9 +445,13 @@ const removeFavoriteJob = asyncHandler(async (req, res) => {
     const user = await User.findById(_id);
     await user.removeFavoriteJob(id);
 
-    // Update favorites count
-    user.usageLimits.favoritesCount = user.favoriteJobs.length;
-    await user.save();
+    // Track removal (doesn't count against limits)
+    await UsageTracker.trackAction(
+      _id, 
+      'remove_favorite', 
+      { jobId: id }, 
+      req
+    );
 
     return res.status(200).json({
       status: true,
@@ -430,7 +459,7 @@ const removeFavoriteJob = asyncHandler(async (req, res) => {
       message: 'Job removed from favorites',
       result: {
         message: 'Job removed from favorites',
-        currentFavorites: user.usageLimits.favoritesCount
+        currentFavorites: user.favoriteJobs.length
       }
     });
   } catch (error) {
@@ -469,29 +498,31 @@ const createJob = asyncHandler(async (req, res) => {
   } = req.body;
 
   try {
-    // Check user subscription and limits
-    const user = await User.findById(_id);
-    const subscription = await user.getActiveSubscription();
+    // Check subscription limits and track usage
+    const usageResult = await UsageTracker.trackAction(
+      _id, 
+      'job_posting', 
+      { 
+        companyId, 
+        jobType, 
+        isFeatured,
+        isSponsored,
+        isUrgentHiring 
+      }, 
+      req
+    );
 
-    if (!subscription) {
+    if (!usageResult.success) {
       return res.status(403).json({
         status: false,
         code: 403,
-        message: 'Active subscription required to post jobs',
-        result: 'No active subscription found'
-      });
-    }
-
-    // Check job posting limits
-    if (!subscription.canPostJob()) {
-      return res.status(403).json({
-        status: false,
-        code: 403,
-        message: 'You have reached your monthly job posting limit. Upgrade your plan for more postings.',
+        message: usageResult.reason,
         result: {
-          currentUsage: subscription.usageStats.jobPostingsUsed,
-          limit: subscription.getRemainingJobPostings(),
-          upgradeRequired: true
+          currentUsage: usageResult.limitInfo.currentUsage,
+          limit: usageResult.limitInfo.limit,
+          remaining: usageResult.limitInfo.remaining,
+          upgradeRequired: usageResult.upgradeRequired,
+          currentTier: usageResult.currentTier
         }
       });
     }
@@ -505,6 +536,10 @@ const createJob = asyncHandler(async (req, res) => {
         result: 'Please provide: title, description, location, jobType, salary, deadline, companyId, categoryId'
       });
     }
+
+    // Get user and subscription for feature validation
+    const user = await User.findById(_id);
+    const subscription = await user.getActiveSubscription();
 
     // Create new job
     const newJob = new Job({
@@ -525,17 +560,24 @@ const createJob = asyncHandler(async (req, res) => {
       createdBy: _id,
       status: 'pending',
       premiumFeatures: {
-        isFeatured: isFeatured && subscription.features_config.canPostFeaturedJobs,
-        isSponsored: isSponsored && subscription.features_config.canPostFeaturedJobs,
-        isUrgentHiring: isUrgentHiring && subscription.features_config.canPostFeaturedJobs,
+        isFeatured: isFeatured && subscription?.features_config?.canPostFeaturedJobs,
+        isSponsored: isSponsored && subscription?.features_config?.canPostFeaturedJobs,
+        isUrgentHiring: isUrgentHiring && subscription?.features_config?.canPostFeaturedJobs,
         featuredUntil: isFeatured ? new Date(Date.now() + featuredDuration * 24 * 60 * 60 * 1000) : null
       }
     });
 
     const savedJob = await newJob.save();
 
-    // Increment user's job posting count
-    await subscription.incrementJobPostings();
+    // Track featured job posting separately if applicable
+    if (isFeatured && subscription?.features_config?.canPostFeaturedJobs) {
+      await UsageTracker.trackAction(
+        _id, 
+        'featured_job_post', 
+        { jobId: savedJob._id }, 
+        req
+      );
+    }
 
     return res.status(200).json({
       status: true,
@@ -543,7 +585,7 @@ const createJob = asyncHandler(async (req, res) => {
       message: 'Job created successfully',
       result: {
         job: savedJob,
-        remainingPostings: subscription.getRemainingJobPostings()
+        remainingPostings: usageResult.limitInfo.isUnlimited ? 'unlimited' : usageResult.limitInfo.remaining
       }
     });
   } catch (error) {
