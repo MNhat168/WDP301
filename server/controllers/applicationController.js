@@ -258,46 +258,6 @@ export const getApplicationsByJobId = async (req, res) => {
   }
 };
 
-export const updateApplicationStatus = async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
-  const employerId = req.user._id;
-
-  try {
-    const companyProfile = await CompanyProfile.findOne({ userId: employerId });
-    if (!companyProfile) {
-      return res.status(403).json({
-        success: false,
-        message: 'No company profile found for this user'
-      });
-    }
-    const application = await Application.findById(id)
-      .populate('jobId', 'companyId');
-
-    if (application.jobId.companyId.toString() !== companyProfile._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Unauthorized to update this application'
-      });
-    }
-
-    application.status = status;
-    await application.save();
-
-    res.json({
-      success: true,
-      message: `Application ${status} successfully`,
-      application
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update status',
-      error: error.message
-    });
-  }
-};
-
 export const scheduleInterview = async (req, res) => {
   const { id } = req.params;
   const { availableSlots, note } = req.body;
@@ -376,6 +336,170 @@ export const scheduleInterview = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to schedule interview',
+      error: error.message
+    });
+  }
+};
+
+
+export const scheduleBulkInterview = async (req, res) => {
+  const { jobId, availableSlots, note } = req.body;
+  const employerId = req.user._id;
+
+  try {
+    const companyProfile = await CompanyProfile.findOne({ userId: employerId });
+    if (!companyProfile) {
+      return res.status(403).json({
+        success: false,
+        message: 'No company profile found for this user'
+      });
+    }
+
+    // Verify job belongs to company
+    const job = await Job.findOne({
+      _id: jobId,
+      companyId: companyProfile._id
+    });
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        message: 'Job not found or unauthorized access'
+      });
+    }
+
+    // Get pending applications for this job
+    const applications = await Application.find({
+      jobId,
+      status: 'pending'
+    }).populate('userId', 'email fullName');
+
+    if (applications.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No pending applications for this job'
+      });
+    }
+
+    // Update applications and send emails
+    const updatePromises = applications.map(app => {
+      return new Promise(async (resolve) => {
+        try {
+          // Update application to interview_scheduled
+          app.status = 'interview_scheduled';
+          app.interview = {
+            availableSlots,
+            note
+          };
+          await app.save();
+
+          const slotsHtml = availableSlots.map(slot => {
+            const dateStr = new Date(slot.date).toLocaleDateString();
+            const timesStr = slot.timeSlots.join(', ');
+            return `<li><strong>${dateStr}</strong>: ${timesStr}</li>`;
+          }).join('');
+
+          // Send interview notice email
+          const emailContent = `
+            <h3>Interview Invitation</h3>
+            <p>Your application for <strong>${job.title}</strong> at <strong>${companyProfile.companyName}</strong> has been accepted!</p>
+            
+            <p><strong>Available Interview Slots:</strong></p>
+            <ul>
+              ${slotsHtml}
+            </ul>
+            
+            <p>Please reply to this email with your preferred date and time slot.</p>
+            
+            ${note ? `<p><strong>Additional Notes:</strong> ${note}</p>` : ''}
+            
+            <p>Best regards,<br>${companyProfile.companyName}</p>
+          `;
+
+          await sendMail({
+            email: app.userId.email,
+            html: emailContent,
+            type: 'interview_schedule'
+          });
+
+          resolve(true);
+        } catch (error) {
+          console.error(`Error processing application ${app._id}:`, error);
+          resolve(false);
+        }
+      });
+    });
+
+    await Promise.all(updatePromises);
+
+    res.json({
+      success: true,
+      message: `Interview scheduled for ${applications.length} applicants`,
+      scheduledCount: applications.length
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to schedule bulk interview',
+      error: error.message
+    });
+  }
+};
+
+export const updateApplicationStatus = async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const employerId = req.user._id;
+
+  try {
+    const companyProfile = await CompanyProfile.findOne({ userId: employerId });
+    if (!companyProfile) {
+      return res.status(403).json({
+        success: false,
+        message: 'No company profile found for this user'
+      });
+    }
+    
+    const application = await Application.findById(id)
+      .populate('jobId', 'companyId title')
+      .populate('userId', 'email fullName');
+
+    if (application.jobId.companyId.toString() !== companyProfile._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized to update this application'
+      });
+    }
+    
+    // Send acceptance email if status is changing to "accepted"
+    if (status === 'accepted') {
+      await sendMail({
+        email: application.userId.email,
+        subject: `Congratulations! You've been accepted for ${application.jobId.title}`,
+        html: `
+          <h3>Job Offer Acceptance</h3>
+          <p>Congratulations! Your application for <strong>${application.jobId.title}</strong> at <strong>${companyProfile.companyName}</strong> has been accepted!</p>
+          
+          <p>We're excited to welcome you to our team. Please expect further communication from our HR department regarding your onboarding process.</p>
+          
+          <p>Best regards,<br>${companyProfile.companyName}</p>
+        `,
+        type: 'application_accepted'
+      });
+    }
+
+    application.status = status;
+    await application.save();
+
+    res.json({
+      success: true,
+      message: `Application ${status} successfully`,
+      application
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update status',
       error: error.message
     });
   }

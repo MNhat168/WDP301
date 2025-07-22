@@ -28,6 +28,18 @@ const sendMail = asyncHandler(async ({ email, html, type }) => {
             subject = "Interview Invitation";
             text = `Your application has been accepted! Please check the HTML version for interview details.`;
             break;
+        case 'interview_notice':
+            subject = "Interview Schedule Notice";
+            text = `Hello,\n\nYour interview has been scheduled. Please check the HTML version for details.`;
+            break;
+        case 'application_accepted':
+            subject = "Application Accepted";
+            text = "Congratulations! Your application has been accepted!";
+            break;
+        case 'application_rejected':
+            subject = "Application Update";
+            text = "We regret to inform you that your application was not successful.";
+            break;
         // case 'accepted':
         //     subject = "Organizer Request Accepted";
         //     text = `Hello,\n\nYour request to become an organizer has been accepted. Congratulations\n`;
