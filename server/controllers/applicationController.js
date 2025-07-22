@@ -241,7 +241,7 @@ export const getApplicationsByJobId = async (req, res) => {
     }
 
     const applications = await Application.find({ jobId })
-      .populate('userId', 'fullName email')
+      .populate('userId', 'firstName lastName email')
       .populate('cvProfileId');
 
     res.json({
