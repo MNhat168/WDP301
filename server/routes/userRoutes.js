@@ -14,6 +14,7 @@ router.post('/login', ctrls.login)
 router.get('/current', verifyAccessToken, ctrls.getCurrent)
 router.get('/limits', verifyAccessToken, ctrls.getUserLimits)
 router.get('/check-permission/:action', verifyAccessToken, ctrls.checkUserPermission)
+router.post('/sync-usage', verifyAccessToken, ctrls.syncUserUsageData)
 router.get('/favorites', verifyAccessToken, ctrls.getFavoriteJobs);
 router.put('/refreshtoken', ctrls.refreshAccessToken)
 router.get('/logout', ctrls.logout)

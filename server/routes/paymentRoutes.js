@@ -3,8 +3,7 @@ import { verifyAccessToken } from '../middlewares/verifyToken.js';
 import {
   createPaymentIntent,
   confirmPayment,
-  getPaymentHistory,
-  activateFreeTrial
+  capturePayPalPayment
 } from '../controllers/paymentController.js';
 
 const router = express.Router();
@@ -15,7 +14,6 @@ router.use(verifyAccessToken);
 // Payment processing
 router.post('/create-intent', createPaymentIntent);
 router.post('/confirm', confirmPayment);
-router.get('/history', getPaymentHistory);
-router.post('/activate-trial', activateFreeTrial);
+router.post('/capture', capturePayPalPayment);
 
 export default router; 

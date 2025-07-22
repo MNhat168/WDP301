@@ -8,6 +8,7 @@ import categoryRoutes from './categoryRoutes.js'
 import subscriptionRoutes from './subscriptionRoutes.js'
 import paymentRoutes from './paymentRoutes.js'
 import applicationRoutes from './applicationRoutes.js';
+import usageRoutes from './usageRoutes.js';
 import { notFound, errHandler } from '../middlewares/errorHandler.js'
 
 const initRoutes = (app) => {
@@ -22,6 +23,7 @@ const initRoutes = (app) => {
     app.use('/api/categories', categoryRoutes)
     app.use('/api/subscriptions', subscriptionRoutes)
     app.use('/api/payments', paymentRoutes)
+    app.use('/api/usage', usageRoutes)
     app.use(notFound)
     app.use(errHandler)
 }

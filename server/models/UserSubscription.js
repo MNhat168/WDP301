@@ -23,7 +23,7 @@ const UserSubscriptionSchema = new Schema({
   },
   status: { 
     type: String, 
-    enum: ['active', 'expired', 'cancelled', 'trial'], 
+    enum: ['active', 'expired', 'cancelled', 'trial', 'pending'], 
     default: 'trial' 
   },
   paidAmount: { 
@@ -57,13 +57,14 @@ const UserSubscriptionSchema = new Schema({
     }
   },
   billing: {
-    customerStripeId: String,
-    subscriptionStripeId: String,
+    paypalPaymentId: String,
+    paypalPayerId: String,
+    paypalOrderId: String,
     lastPaymentDate: Date,
     nextPaymentDate: Date,
     paymentStatus: {
       type: String,
-      enum: ['pending', 'paid', 'failed', 'refunded'],
+      enum: ['pending', 'paid', 'failed', 'refunded', 'trial'],
       default: 'pending'
     }
   },
@@ -85,7 +86,7 @@ UserSubscriptionSchema.index({ packageType: 1, status: 1 });
 
 // Virtual properties
 UserSubscriptionSchema.virtual('isActive').get(function() {
-  return this.status === 'active' && this.expiryDate > new Date();
+  return (this.status === 'active' || this.status === 'trial') && this.expiryDate > new Date();
 });
 
 UserSubscriptionSchema.virtual('daysRemaining').get(function() {
@@ -263,7 +264,7 @@ UserSubscriptionSchema.methods.resumeSubscription = function() {
 UserSubscriptionSchema.statics.findActiveByUserId = function(userId) {
   return this.findOne({ 
     userId: userId, 
-    status: 'active',
+    status: { $in: ['active', 'trial', 'pending'] },
     expiryDate: { $gt: new Date() }
   }).populate('subscriptionId');
 };
