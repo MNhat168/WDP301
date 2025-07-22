@@ -8,7 +8,9 @@ import {
   cancelSubscription,
   getUserUsageStats,
   syncUserCounters,
-  getSubscriptionAnalytics
+  getSubscriptionAnalytics,
+  ensureDefaultSubscription,
+  getBillingHistory
 } from '../controllers/subscriptionController.js';
 
 const router = express.Router();
@@ -22,8 +24,10 @@ router.use(verifyAccessToken);
 // User subscription management
 router.get('/my-subscription', getUserSubscription);
 router.get('/usage-stats', getUserUsageStats);
+router.get('/billing-history', getBillingHistory);
 router.post('/sync-counters', syncUserCounters);
 router.post('/subscribe', subscribeToPlan);
+router.post('/ensure-default', ensureDefaultSubscription);
 router.patch('/upgrade', upgradeSubscription);
 router.patch('/cancel', cancelSubscription);
 

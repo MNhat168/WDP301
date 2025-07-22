@@ -7,6 +7,7 @@ import sendMail from '../config/sendMail.js';
 import Role from '../models/Role.js';
 import Subscription from '../models/Subscription.js';
 import UserSubscription from '../models/UserSubscription.js';
+import UsageTracker from '../services/usageTracker.js';
 
 // Đăng ký cho Job Seeker
 const registerJobseeker = asyncHandler(async (req, res) => {
@@ -50,21 +51,33 @@ const registerJobseeker = asyncHandler(async (req, res) => {
 
         // Auto assign free subscription
         try {
-            const freePackage = await Subscription.findOne({ packageType: 'free' });
+            const freePackage = await Subscription.findOne({ packageType: 'free', isActive: true });
             if (freePackage) {
+                // Set expiry to 1 year for free plan (essentially permanent)
                 const expiry = new Date();
-                expiry.setDate(expiry.getDate() + freePackage.duration);
-                await UserSubscription.create({
+                expiry.setFullYear(expiry.getFullYear() + 1);
+                
+                const freeSubscription = await UserSubscription.create({
                     userId: newUser._id,
                     subscriptionId: freePackage._id,
                     startDate: new Date(),
                     expiryDate: expiry,
                     status: 'active',
-                    packageType: freePackage.packageType
+                    packageType: 'free',
+                    paidAmount: 0,
+                    paymentMethod: 'free',
+                    billing: {
+                        paymentStatus: 'paid'
+                    }
                 });
+                
+                console.log('Free subscription created for job seeker:', freeSubscription._id);
+            } else {
+                console.warn('Free package not found in database');
             }
         } catch (err) {
             console.error('Create free subscription failed:', err.message);
+            // Don't fail registration if subscription creation fails
         }
 
         let type = 'verify_account'
@@ -186,23 +199,35 @@ const registerEmployer = asyncHandler(async (req, res) => {
         const otp = newUser.createOtp(); // Tạo OTP
         await newUser.save();
 
-        // Auto assign basic subscription for employer
+        // Auto assign free subscription for employer (they can upgrade later)
         try {
-            const basicPackage = await Subscription.findOne({ packageType: 'basic' });
-            if (basicPackage) {
+            const freePackage = await Subscription.findOne({ packageType: 'free', isActive: true });
+            if (freePackage) {
+                // Set expiry to 1 year for free plan
                 const expiry = new Date();
-                expiry.setDate(expiry.getDate() + basicPackage.duration);
-                await UserSubscription.create({
+                expiry.setFullYear(expiry.getFullYear() + 1);
+                
+                const freeSubscription = await UserSubscription.create({
                     userId: newUser._id,
-                    subscriptionId: basicPackage._id,
+                    subscriptionId: freePackage._id,
                     startDate: new Date(),
                     expiryDate: expiry,
                     status: 'active',
-                    packageType: basicPackage.packageType
+                    packageType: 'free',
+                    paidAmount: 0,
+                    paymentMethod: 'free',
+                    billing: {
+                        paymentStatus: 'paid'
+                    }
                 });
+                
+                console.log('Free subscription created for employer:', freeSubscription._id);
+            } else {
+                console.warn('Free package not found in database');
             }
         } catch (err) {
-            console.error('Create basic subscription failed:', err.message);
+            console.error('Create free subscription failed:', err.message);
+            // Don't fail registration if subscription creation fails
         }
 
         let type = 'verify_account'
@@ -448,7 +473,47 @@ const getUserLimits = asyncHandler(async (req, res) => {
     }
 
     try {
+        // Get usage stats from new tracking system
+        const usageStats = await UsageTracker.getUserUsageStats(_id);
         const subscription = await user.getActiveSubscription()
+
+        // Helper function to get actual usage count with fallback
+        const getActualUsage = (trackingUsed, actualCount, needsSync = false) => {
+            // If sync is needed or tracking shows 0 but actual count > 0, use actual count
+            if (needsSync || (trackingUsed === 0 && actualCount > 0)) {
+                return actualCount;
+            }
+            return Math.max(trackingUsed, actualCount); // Use higher value for safety
+        };
+
+        // Get actual counts from different sources with correct action mapping
+        const usageStatsMapping = {
+            job_application: usageStats.job_application || { used: 0, limit: 5 },
+            add_favorite: usageStats.add_favorite || { used: 0, limit: 10 },
+            job_posting: usageStats.job_posting || { used: 0, limit: 0 }
+        };
+
+        const actualApplications = user.applications?.length || 0;
+        const actualFavorites = user.favoriteJobs?.length || 0; 
+        const actualJobPostings = 0; // Will implement later
+
+        // Check if sync is needed - compare tracking vs actual
+        const needsAppSync = usageStatsMapping.job_application.used !== actualApplications;
+        const needsFavSync = usageStatsMapping.add_favorite.used !== actualFavorites;
+        const needsJobSync = false; // Not implemented yet
+
+        // Helper function to get action limits
+        const getActionLimitValue = (tier, action) => {
+            const limits = {
+                free: { applications: 5, favorites: 10, jobPostings: 0 },
+                basic: { applications: 20, favorites: 50, jobPostings: 5 },
+                premium: { applications: -1, favorites: -1, jobPostings: 20 },
+                enterprise: { applications: -1, favorites: -1, jobPostings: -1 }
+            };
+            return limits[tier]?.[action] || limits.free[action] || 0;
+        };
+
+        const subscriptionTier = subscription ? subscription.packageType : 'free';
 
         const limitsInfo = subscription ? {
             subscription: {
@@ -461,20 +526,58 @@ const getUserLimits = asyncHandler(async (req, res) => {
                 isActive: subscription.isActive
             },
             applications: {
-                used: subscription.usageStats.applicationsUsed,
-                limit: subscription.packageType === 'enterprise' ? -1 :
-                    (subscription.packageType === 'premium' ? 50 :
-                        subscription.packageType === 'basic' ? 10 : 0),
-                remaining: subscription.getRemainingApplications(),
-                canApply: subscription.canApplyToJob()
+                used: getActualUsage(
+                    usageStatsMapping.job_application.used, 
+                    actualApplications, 
+                    needsAppSync
+                ),
+                limit: getActionLimitValue(subscriptionTier, 'applications'),
+                remaining: Math.max(0, getActionLimitValue(subscriptionTier, 'applications') - getActualUsage(
+                    usageStatsMapping.job_application.used, 
+                    actualApplications, 
+                    needsAppSync
+                )),
+                canApply: getActionLimitValue(subscriptionTier, 'applications') > getActualUsage(
+                    usageStatsMapping.job_application.used, 
+                    actualApplications, 
+                    needsAppSync
+                )
             },
             jobPostings: {
-                used: subscription.usageStats.jobPostingsUsed,
-                limit: subscription.packageType === 'enterprise' ? -1 :
-                    (subscription.packageType === 'premium' ? 20 :
-                        subscription.packageType === 'basic' ? 5 : 0),
-                remaining: subscription.getRemainingJobPostings(),
-                canPost: subscription.canPostJob()
+                used: getActualUsage(
+                    usageStatsMapping.job_posting.used, 
+                    actualJobPostings, 
+                    needsJobSync
+                ),
+                limit: getActionLimitValue(subscriptionTier, 'jobPostings'),
+                remaining: Math.max(0, getActionLimitValue(subscriptionTier, 'jobPostings') - getActualUsage(
+                    usageStatsMapping.job_posting.used, 
+                    actualJobPostings, 
+                    needsJobSync
+                )),
+                canPost: getActionLimitValue(subscriptionTier, 'jobPostings') > getActualUsage(
+                    usageStatsMapping.job_posting.used, 
+                    actualJobPostings, 
+                    needsJobSync
+                )
+            },
+            favorites: {
+                used: getActualUsage(
+                    usageStatsMapping.add_favorite.used, 
+                    actualFavorites, 
+                    needsFavSync
+                ),
+                limit: getActionLimitValue(subscriptionTier, 'favorites'),
+                remaining: Math.max(0, getActionLimitValue(subscriptionTier, 'favorites') - getActualUsage(
+                    usageStatsMapping.add_favorite.used, 
+                    actualFavorites, 
+                    needsFavSync
+                )),
+                canAddMore: getActionLimitValue(subscriptionTier, 'favorites') > getActualUsage(
+                    usageStatsMapping.add_favorite.used, 
+                    actualFavorites, 
+                    needsFavSync
+                )
             },
             features: {
                 hasUnlimitedApplications: subscription.packageType === 'enterprise',
@@ -483,7 +586,7 @@ const getUserLimits = asyncHandler(async (req, res) => {
                 hasAdvancedFilters: ['premium', 'enterprise'].includes(subscription.packageType),
                 canDirectMessage: ['premium', 'enterprise'].includes(subscription.packageType)
             },
-            lastUsed: subscription.usageStats.lastUsedDate
+            lastUsed: usageStats.lastActivity
         } : {
             subscription: {
                 type: 'free',
@@ -495,16 +598,46 @@ const getUserLimits = asyncHandler(async (req, res) => {
                 isActive: false
             },
             applications: {
-                used: user.usageLimits.monthlyApplications,
+                used: getActualUsage(
+                    usageStatsMapping.job_application.used, 
+                    actualApplications, 
+                    needsAppSync
+                ),
                 limit: 5, // Free tier limit
-                remaining: Math.max(0, 5 - user.usageLimits.monthlyApplications),
-                canApply: user.usageLimits.monthlyApplications < 5
+                remaining: Math.max(0, 5 - getActualUsage(
+                    usageStatsMapping.job_application.used, 
+                    actualApplications, 
+                    needsAppSync
+                )),
+                canApply: 5 > getActualUsage(
+                    usageStatsMapping.job_application.used, 
+                    actualApplications, 
+                    needsAppSync
+                )
             },
             jobPostings: {
                 used: 0,
                 limit: 0, // Free users can't post jobs
                 remaining: 0,
                 canPost: false
+            },
+            favorites: {
+                used: getActualUsage(
+                    usageStatsMapping.add_favorite.used, 
+                    actualFavorites, 
+                    needsFavSync
+                ),
+                limit: 10, // Free tier limit
+                remaining: Math.max(0, 10 - getActualUsage(
+                    usageStatsMapping.add_favorite.used, 
+                    actualFavorites, 
+                    needsFavSync
+                )),
+                canAddMore: 10 > getActualUsage(
+                    usageStatsMapping.add_favorite.used, 
+                    actualFavorites, 
+                    needsFavSync
+                )
             },
             features: {
                 hasUnlimitedApplications: false,
@@ -513,23 +646,39 @@ const getUserLimits = asyncHandler(async (req, res) => {
                 hasAdvancedFilters: false,
                 canDirectMessage: false
             },
-            lastUsed: user.usageLimits.lastResetDate
+            lastUsed: usageStats.lastActivity
         }
 
         // Add user analytics
         limitsInfo.analytics = {
-            profileViews: user.analytics.profileViews,
-            cvDownloads: user.analytics.cvDownloads,
-            totalJobApplications: user.analytics.jobApplications,
-            lastActivity: user.analytics.lastActivityDate,
-            monthlyViews: user.analytics.monthlyViews
+            profileViews: user.analytics?.profileViews || 0,
+            cvDownloads: user.analytics?.cvDownloads || 0,
+            totalJobApplications: user.analytics?.jobApplications || 0,
+            lastActivity: user.analytics?.lastActivityDate,
+            monthlyViews: user.analytics?.monthlyViews || 0
         }
 
-        // Add favorite jobs info
-        limitsInfo.favorites = {
-            count: user.favoriteJobs.length,
-            limit: 50, // General limit for favorites
-            canAddMore: user.favoriteJobs.length < 50
+        // Add actual user counts for verification and debug info
+        limitsInfo.user = {
+            actualCounts: {
+                favoriteJobs: actualFavorites,
+                applications: actualApplications,
+                jobPostings: actualJobPostings
+            }
+        }
+
+        // Add sync status for debugging
+        limitsInfo.debug = {
+            needsSync: {
+                applications: needsAppSync,
+                favorites: needsFavSync,
+                jobPostings: needsJobSync
+            },
+            rawUsageStats: {
+                applications: usageStatsMapping.job_application.used,
+                favorites: usageStatsMapping.add_favorite.used,
+                jobPostings: usageStatsMapping.job_posting.used
+            }
         }
 
         return res.status(200).json({
@@ -540,6 +689,7 @@ const getUserLimits = asyncHandler(async (req, res) => {
         })
 
     } catch (error) {
+        console.error('Error getting user limits:', error);
         return res.status(500).json({
             status: false,
             code: 500,
@@ -1112,6 +1262,59 @@ const toggleBanUser = asyncHandler(async (req, res) => {
     }
 });
 
+// Sync user usage data
+const syncUserUsageData = asyncHandler(async (req, res) => {
+    const { _id } = req.user;
+
+    try {
+        const user = await User.findById(_id);
+        if (!user) {
+            return res.status(404).json({
+                status: false,
+                code: 404,
+                message: 'User not found'
+            });
+        }
+
+        // Sync applications data - using correct action name for UsageTracker
+        const actualApplications = user.applications?.length || 0;
+        if (actualApplications > 0) {
+            await UsageTracker.syncUserData(_id, 'job_application', actualApplications);
+        }
+
+        // Sync favorites data - using correct action name for UsageTracker
+        const actualFavorites = user.favoriteJobs?.length || 0;
+        if (actualFavorites > 0) {
+            await UsageTracker.syncUserData(_id, 'add_favorite', actualFavorites);
+        }
+
+        // Get updated stats
+        const updatedStats = await UsageTracker.getUserUsageStats(_id);
+
+        return res.status(200).json({
+            status: true,
+            code: 200,
+            message: 'User usage data synced successfully',
+            result: {
+                synced: {
+                    applications: actualApplications,
+                    favorites: actualFavorites
+                },
+                updatedStats
+            }
+        });
+
+    } catch (error) {
+        console.error('Error syncing user usage data:', error);
+        return res.status(500).json({
+            status: false,
+            code: 500,
+            message: 'Failed to sync user usage data',
+            error: error.message
+        });
+    }
+});
+
 export {
     registerJobseeker,
     registerEmployer,
@@ -1136,5 +1339,6 @@ export {
     getUsersByRole,
     toggleBanUser,
     getUserLimits,
-    checkUserPermission
+    checkUserPermission,
+    syncUserUsageData
 };

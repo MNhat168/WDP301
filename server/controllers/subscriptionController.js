@@ -2,6 +2,8 @@ import Subscription from '../models/Subscription.js';
 import UserSubscription from '../models/UserSubscription.js';
 import User from '../models/User.js';
 import asyncHandler from 'express-async-handler';
+import paypalClient from '../config/paypalClient.js';
+import checkoutNodeJssdk from '@paypal/checkout-server-sdk';
 
 // Get all available subscription plans
 const getSubscriptionPlans = asyncHandler(async (req, res) => {
@@ -91,7 +93,7 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
   const { _id } = req.user;
   const { 
     subscriptionId, 
-    paymentMethod = 'stripe',
+    paymentMethod = 'paypal',
     billingPeriod = 'monthly' // monthly or yearly
   } = req.body;
   
@@ -109,17 +111,6 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
     
     const user = await User.findById(_id);
     
-    // Check if user already has active subscription
-    const existingSubscription = await UserSubscription.findActiveByUserId(_id);
-    if (existingSubscription) {
-      return res.status(400).json({
-        status: false,
-        code: 400,
-        message: 'User already has an active subscription',
-        result: 'Please cancel current subscription first'
-      });
-    }
-    
     // Calculate pricing based on billing period
     const userRole = await user.populate('roleId');
     const userType = userRole.roleId.name === 'ROLE_EMPLOYEE' ? 'employer' : 'jobSeeker';
@@ -127,44 +118,229 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
       ? subscription.pricing[userType].yearly 
       : subscription.pricing[userType].monthly;
     
-    // Create new user subscription
+    // Check if user already has active subscription
+    const existingSubscription = await UserSubscription.findActiveByUserId(_id);
+    
+    if (existingSubscription) {
+      // User wants to change/upgrade subscription
+      console.log('User has existing subscription, upgrading...');
+      
+      // If it's the same plan, just return success
+      if (existingSubscription.subscriptionId.toString() === subscriptionId) {
+        return res.status(200).json({
+          status: true,
+          code: 200,
+          message: 'You already have this subscription plan',
+          result: {
+            subscription: existingSubscription,
+            paymentRequired: false
+          }
+        });
+      }
+      
+      // If it's a trial or free subscription (price = 0), activate immediately
+      if (paymentMethod === 'trial' || price === 0) {
+        const trialDuration = subscription.promotions?.freeTrialDays || 30;
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + trialDuration);
+        
+        // Update existing subscription
+        existingSubscription.subscriptionId = subscriptionId;
+        existingSubscription.packageType = subscription.packageType;
+        existingSubscription.status = price === 0 ? 'active' : 'trial';
+        existingSubscription.paidAmount = 0;
+        existingSubscription.paymentMethod = 'trial';
+        existingSubscription.expiryDate = expiryDate;
+        existingSubscription.billing.paymentStatus = price === 0 ? 'paid' : 'trial';
+        
+        await existingSubscription.save();
+        
+        // Update user premium features
+        if (subscription.packageType !== 'free') {
+          user.premiumFeatures = {
+            hasUnlimitedApplications: subscription.features_config.canApplyUnlimited,
+            hasPriorityListing: subscription.features_config.hasPriorityListing,
+            canSeeJobViewers: subscription.features_config.canSeeJobViewers,
+            hasAdvancedFilters: subscription.features_config.hasAdvancedFilters,
+            canDirectMessage: subscription.features_config.canDirectMessage
+          };
+          await user.save();
+        }
+
+        return res.status(200).json({
+          status: true,
+          code: 200,
+          message: price === 0 ? 'Subscription changed successfully' : 'Trial subscription activated successfully',
+          result: {
+            subscription: existingSubscription,
+            trialDays: price === 0 ? 0 : trialDuration
+          }
+        });
+      }
+      
+      // For paid upgrades, create PayPal payment URL
+      const request = new checkoutNodeJssdk.orders.OrdersCreateRequest();
+      request.prefer('return=representation');
+      request.requestBody({
+        intent: 'CAPTURE',
+        purchase_units: [
+          {
+            reference_id: subscriptionId,
+            amount: {
+              currency_code: 'USD',
+              value: price.toString()
+            },
+            description: `EasyJob ${subscription.packageName} Subscription Upgrade`
+          }
+        ],
+        application_context: {
+          return_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/payment-callback`,
+          cancel_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/packages`
+        }
+      });
+
+      const createOrderResponse = await paypalClient.client().execute(request);
+      const approvalUrl = createOrderResponse.result.links.find(link => link.rel === 'approve')?.href;
+      const orderId = createOrderResponse.result.id;
+
+      if (!approvalUrl) {
+        throw new Error('Failed to create PayPal order or get approval URL');
+      }
+      
+      // Update existing subscription to pending for upgrade
+      existingSubscription.subscriptionId = subscriptionId;
+      existingSubscription.packageType = subscription.packageType;
+      existingSubscription.status = 'pending';
+      existingSubscription.paidAmount = price;
+      existingSubscription.paymentMethod = paymentMethod;
+      existingSubscription.billing.paymentStatus = 'pending';
+      existingSubscription.billing.paypalOrderId = orderId;
+      
+      await existingSubscription.save();
+
+      return res.status(200).json({
+        status: true,
+        code: 200,
+        message: 'PayPal payment order created for subscription upgrade',
+        result: {
+          subscription: existingSubscription,
+          paymentRequired: true,
+          paymentUrl: approvalUrl,
+          amount: price,
+          paymentMethod: paymentMethod,
+          billingPeriod: billingPeriod,
+          isUpgrade: true,
+          orderId: orderId
+        }
+      });
+    }
+    
+    // User doesn't have subscription, create new one
+    console.log('User has no subscription, creating new...');
+    
+    // If it's a trial subscription (price = 0), activate immediately
+    if (paymentMethod === 'trial' || price === 0) {
+      const trialDuration = subscription.promotions?.freeTrialDays || 30;
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + trialDuration);
+      
+      const newUserSubscription = new UserSubscription({
+        userId: _id,
+        subscriptionId: subscriptionId,
+        packageType: subscription.packageType,
+        status: price === 0 ? 'active' : 'trial',
+        paidAmount: 0,
+        paymentMethod: 'trial',
+        expiryDate: expiryDate,
+        billing: {
+          paymentStatus: price === 0 ? 'paid' : 'trial'
+        }
+      });
+      
+      await newUserSubscription.save();
+      
+      // Update user premium features
+      if (subscription.packageType !== 'free') {
+        user.premiumFeatures = {
+          hasUnlimitedApplications: subscription.features_config.canApplyUnlimited,
+          hasPriorityListing: subscription.features_config.hasPriorityListing,
+          canSeeJobViewers: subscription.features_config.canSeeJobViewers,
+          hasAdvancedFilters: subscription.features_config.hasAdvancedFilters,
+          canDirectMessage: subscription.features_config.canDirectMessage
+        };
+        await user.save();
+      }
+
+      return res.status(200).json({
+        status: true,
+        code: 200,
+        message: price === 0 ? 'Subscription activated successfully' : 'Trial subscription activated successfully',
+        result: {
+          subscription: newUserSubscription,
+          trialDays: price === 0 ? 0 : trialDuration
+        }
+      });
+    }
+    
+    // For paid subscriptions, create PayPal payment URL
+    const request = new checkoutNodeJssdk.orders.OrdersCreateRequest();
+    request.prefer('return=representation');
+    request.requestBody({
+      intent: 'CAPTURE',
+      purchase_units: [
+        {
+          reference_id: subscriptionId,
+          amount: {
+            currency_code: 'USD',
+            value: price.toString()
+          },
+          description: `EasyJob ${subscription.packageName} Subscription`
+        }
+      ],
+      application_context: {
+        return_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/payment-callback`,
+        cancel_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/packages`
+      }
+    });
+
+    const createOrderResponse = await paypalClient.client().execute(request);
+    const approvalUrl = createOrderResponse.result.links.find(link => link.rel === 'approve')?.href;
+    const orderId = createOrderResponse.result.id;
+
+    if (!approvalUrl) {
+      throw new Error('Failed to create PayPal order or get approval URL');
+    }
+    
+    // Create pending subscription
     const newUserSubscription = new UserSubscription({
       userId: _id,
       subscriptionId: subscriptionId,
       packageType: subscription.packageType,
-      status: 'trial', // Start with trial, will be activated after payment
+      status: 'pending', // Will be activated after payment confirmation
       paidAmount: price,
       paymentMethod: paymentMethod,
       expiryDate: new Date(Date.now() + (billingPeriod === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000),
       billing: {
         paymentStatus: 'pending',
+        paypalOrderId: orderId,
         nextPaymentDate: new Date(Date.now() + (billingPeriod === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000)
       }
     });
     
     await newUserSubscription.save();
-    
-    // Update user premium features
-    if (subscription.packageType !== 'free') {
-      user.premiumFeatures = {
-        hasUnlimitedApplications: subscription.features_config.canApplyUnlimited,
-        hasPriorityListing: subscription.features_config.hasPriorityListing,
-        canSeeJobViewers: subscription.features_config.canSeeJobViewers,
-        hasAdvancedFilters: subscription.features_config.hasAdvancedFilters,
-        canDirectMessage: subscription.features_config.canDirectMessage
-      };
-      await user.save();
-    }
 
     return res.status(200).json({
       status: true,
       code: 200,
-      message: 'Subscription created successfully',
+      message: 'PayPal payment order created successfully',
       result: {
         subscription: newUserSubscription,
-        paymentRequired: price > 0,
+        paymentRequired: true,
+        paymentUrl: approvalUrl,
         amount: price,
-        paymentMethod: paymentMethod
+        paymentMethod: paymentMethod,
+        billingPeriod: billingPeriod,
+        orderId: orderId
       }
     });
   } catch (error) {
@@ -180,7 +356,7 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
 // Upgrade subscription
 const upgradeSubscription = asyncHandler(async (req, res) => {
   const { _id } = req.user;
-  const { subscriptionId, paymentMethod = 'stripe' } = req.body;
+  const { subscriptionId, paymentMethod = 'paypal' } = req.body;
   
   try {
     const newSubscription = await Subscription.findById(subscriptionId);
@@ -553,6 +729,112 @@ const getSubscriptionAnalytics = asyncHandler(async (req, res) => {
   }
 });
 
+// Ensure user has default free subscription
+const ensureDefaultSubscription = asyncHandler(async (req, res) => {
+  const { _id } = req.user;
+  
+  try {
+    // Check if user already has any subscription
+    const existingSubscription = await UserSubscription.findOne({ userId: _id });
+    
+    if (existingSubscription) {
+      return res.status(200).json({
+        status: true,
+        code: 200,
+        message: 'User already has subscription',
+        result: existingSubscription
+      });
+    }
+    
+    // Create free subscription
+    const freePackage = await Subscription.findOne({ packageType: 'free', isActive: true });
+    
+    if (!freePackage) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'Free package not found',
+        result: 'No free plan available'
+      });
+    }
+    
+    const expiry = new Date();
+    expiry.setFullYear(expiry.getFullYear() + 1);
+    
+    const freeSubscription = new UserSubscription({
+      userId: _id,
+      subscriptionId: freePackage._id,
+      startDate: new Date(),
+      expiryDate: expiry,
+      status: 'active',
+      packageType: 'free',
+      paidAmount: 0,
+      paymentMethod: 'free',
+      billing: {
+        paymentStatus: 'paid'
+      }
+    });
+    
+    await freeSubscription.save();
+    
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'Default free subscription created',
+      result: freeSubscription
+    });
+    
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      code: 500,
+      message: 'Failed to ensure default subscription',
+      result: error.message
+    });
+  }
+});
+
+// Get billing history for current user
+const getBillingHistory = asyncHandler(async (req, res) => {
+  const { _id } = req.user;
+  
+  try {
+    const history = await UserSubscription.find({ userId: _id })
+      .populate('subscriptionId', 'packageName packageType basePrice')
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    const formattedHistory = history.map(item => ({
+      id: item._id,
+      planName: item.subscriptionId?.packageName || 'Unknown Plan',
+      planType: item.subscriptionId?.packageType || 'unknown',
+      amount: item.paidAmount || 0,
+      status: item.status,
+      paymentMethod: item.paymentMethod,
+      paymentDate: item.billing?.lastPaymentDate || item.createdAt,
+      nextPaymentDate: item.billing?.nextPaymentDate,
+      startDate: item.startDate || item.createdAt,
+      expiryDate: item.expiryDate,
+      description: `${item.subscriptionId?.packageName || 'Subscription'} - ${item.status}`
+    }));
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'Billing history retrieved successfully',
+      result: formattedHistory
+    });
+  } catch (error) {
+    console.error('Get billing history error:', error);
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Get billing history failed',
+      result: error.message
+    });
+  }
+});
+
 export {
   getSubscriptionPlans,
   getUserSubscription,
@@ -561,5 +843,7 @@ export {
   cancelSubscription,
   getUserUsageStats,
   syncUserCounters,
-  getSubscriptionAnalytics
+  getSubscriptionAnalytics,
+  ensureDefaultSubscription,
+  getBillingHistory
 }; 
