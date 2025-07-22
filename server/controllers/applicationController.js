@@ -343,7 +343,7 @@ export const scheduleInterview = async (req, res) => {
 
 
 export const scheduleBulkInterview = async (req, res) => {
-  const { jobId, availableSlots, note } = req.body;
+  const { applicationIds, availableSlots, note } = req.body;
   const employerId = req.user._id;
 
   try {
@@ -355,7 +355,15 @@ export const scheduleBulkInterview = async (req, res) => {
       });
     }
 
-    // Verify job belongs to company
+    const sampleApp = await Application.findById(applicationIds[0]);
+    if (!sampleApp) {
+      return res.status(404).json({
+        success: false,
+        message: 'Applications not found'
+      });
+    }
+    const jobId = sampleApp.jobId;
+
     const job = await Job.findOne({
       _id: jobId,
       companyId: companyProfile._id
@@ -368,11 +376,11 @@ export const scheduleBulkInterview = async (req, res) => {
       });
     }
 
-    // Get pending applications for this job
     const applications = await Application.find({
-      jobId,
-      status: 'pending'
-    }).populate('userId', 'email fullName');
+      _id: { $in: applicationIds }, 
+      status: 'pending',
+      jobId
+    }).populate('userId', 'email firstName lastName');
 
     if (applications.length === 0) {
       return res.status(400).json({
@@ -459,7 +467,7 @@ export const updateApplicationStatus = async (req, res) => {
         message: 'No company profile found for this user'
       });
     }
-    
+
     const application = await Application.findById(id)
       .populate('jobId', 'companyId title')
       .populate('userId', 'email fullName');
@@ -470,7 +478,7 @@ export const updateApplicationStatus = async (req, res) => {
         message: 'Unauthorized to update this application'
       });
     }
-    
+
     // Send acceptance email if status is changing to "accepted"
     if (status === 'accepted') {
       await sendMail({
