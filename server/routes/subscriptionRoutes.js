@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyAccessToken, isAdmin } from '../middlewares/verifyToken.js';
+import { verifyAccessToken, } from '../middlewares/verifyToken.js';
 import {
   getSubscriptionPlans,
   getUserSubscription,
@@ -10,7 +10,10 @@ import {
   syncUserCounters,
   getSubscriptionAnalytics,
   ensureDefaultSubscription,
-  getBillingHistory
+  getBillingHistory,
+  createSubscription,
+  updateSubscription,
+  deleteSubscription
 } from '../controllers/subscriptionController.js';
 
 const router = express.Router();
@@ -32,6 +35,9 @@ router.patch('/upgrade', upgradeSubscription);
 router.patch('/cancel', cancelSubscription);
 
 // Admin only routes
-router.get('/analytics', isAdmin, getSubscriptionAnalytics);
+router.get('/analytics', getSubscriptionAnalytics);
+router.post('/admin',  createSubscription);
+router.put('/admin/:id',  updateSubscription);
+router.delete('/admin/:id',  deleteSubscription);
 
 export default router; 
