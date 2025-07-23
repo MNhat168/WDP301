@@ -835,6 +835,127 @@ const getBillingHistory = asyncHandler(async (req, res) => {
   }
 });
 
+// Admin: Create a new subscription plan
+const createSubscription = asyncHandler(async (req, res) => {
+  try {
+    const {
+      packageName,
+      description,
+      basePrice,
+      pricing,
+      features,
+      duration,
+      packageType,
+      limits,
+      maxJobPostings,
+      maxApplications,
+      isActive,
+      features_config,
+      promotions
+    } = req.body;
+
+    // Check if packageType is unique
+    const exists = await Subscription.findOne({ packageType });
+    if (exists) {
+      return res.status(400).json({
+        status: false,
+        code: 400,
+        message: 'A subscription with this packageType already exists',
+        result: null
+      });
+    }
+
+    const subscription = await Subscription.create({
+      packageName,
+      description,
+      basePrice,
+      pricing,
+      features,
+      duration,
+      packageType,
+      limits,
+      maxJobPostings,
+      maxApplications,
+      isActive,
+      features_config,
+      promotions
+    });
+
+    return res.status(201).json({
+      status: true,
+      code: 201,
+      message: 'Subscription plan created successfully',
+      result: subscription
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Create subscription failed',
+      result: error.message
+    });
+  }
+});
+
+// Admin: Update a subscription plan
+const updateSubscription = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+    const subscription = await Subscription.findByIdAndUpdate(id, updateData, { new: true });
+    if (!subscription) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'Subscription plan not found',
+        result: null
+      });
+    }
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'Subscription plan updated successfully',
+      result: subscription
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Update subscription failed',
+      result: error.message
+    });
+  }
+});
+
+// Admin: Delete a subscription plan
+const deleteSubscription = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const subscription = await Subscription.findByIdAndDelete(id);
+    if (!subscription) {
+      return res.status(404).json({
+        status: false,
+        code: 404,
+        message: 'Subscription plan not found',
+        result: null
+      });
+    }
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'Subscription plan deleted successfully',
+      result: subscription
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Delete subscription failed',
+      result: error.message
+    });
+  }
+});
+
 export {
   getSubscriptionPlans,
   getUserSubscription,
@@ -845,5 +966,8 @@ export {
   syncUserCounters,
   getSubscriptionAnalytics,
   ensureDefaultSubscription,
-  getBillingHistory
+  getBillingHistory,
+  createSubscription,
+  updateSubscription,
+  deleteSubscription
 }; 
