@@ -3,6 +3,7 @@ import Job from '../models/Job.js';
 import CVProfile from '../models/CVProfile.js';
 import CompanyProfile from '../models/CompanyProfile.js';
 import sendMail from '../config/sendMail.js';
+import AIMatchingService from '../services/aiMatchingService.js';
 
 export const applyToJob = async (req, res) => {
   const { jobId } = req.body;
@@ -48,6 +49,15 @@ export const applyToJob = async (req, res) => {
       });
     }
 
+    // Get job details for AI analysis
+    const job = await Job.findById(jobId);
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        message: 'Job not found'
+      });
+    }
+
     // Create new application
     const application = await Application.create({
       jobId,
@@ -60,10 +70,73 @@ export const applyToJob = async (req, res) => {
       $inc: { applicantCount: 1 }
     });
 
+    // Trigger AI analysis in background (non-blocking)
+    setImmediate(async () => {
+      try {
+        console.log(`🤖 Starting AI analysis for application ${application._id}`);
+        const matchResult = await AIMatchingService.calculateMatchScore(cvProfile, job);
+        
+        if (matchResult.success) {
+          // Update application with AI analysis
+          await Application.findByIdAndUpdate(application._id, {
+            aiAnalysis: matchResult.analysis
+          });
+          console.log(`✅ AI analysis completed for application ${application._id} with score: ${matchResult.analysis.matchScore}`);
+        } else {
+          console.log(`⚠️ AI analysis failed for application ${application._id}, using fallback score: ${matchResult.fallbackScore}`);
+          // Use fallback scoring
+          const fallbackAnalysis = {
+            matchScore: matchResult.fallbackScore,
+            explanation: 'AI analysis failed, using rule-based fallback scoring',
+            skillsMatch: { matched: [], missing: [], additional: [] },
+            experienceMatch: { score: 50, explanation: 'Could not analyze with AI' },
+            educationMatch: { score: 50, explanation: 'Could not analyze with AI' },
+            overallRecommendation: 'consider',
+            analyzedAt: new Date(),
+            aiModel: 'fallback'
+          };
+          
+          await Application.findByIdAndUpdate(application._id, {
+            aiAnalysis: fallbackAnalysis
+          });
+        }
+      } catch (error) {
+        console.error(`❌ Error in background AI analysis for application ${application._id}:`, error);
+        
+        // Save basic fallback analysis even if error occurs
+        try {
+          const basicFallback = {
+            matchScore: 50,
+            explanation: 'AI analysis encountered an error, basic fallback applied',
+            skillsMatch: { matched: [], missing: [], additional: [] },
+            experienceMatch: { score: 50, explanation: 'Error in analysis' },
+            educationMatch: { score: 50, explanation: 'Error in analysis' },
+            overallRecommendation: 'consider',
+            analyzedAt: new Date(),
+            aiModel: 'error-fallback'
+          };
+          
+          await Application.findByIdAndUpdate(application._id, {
+            aiAnalysis: basicFallback
+          });
+        } catch (fallbackError) {
+          console.error(`Failed to save fallback analysis:`, fallbackError);
+        }
+      }
+    });
+
     res.status(201).json({
       success: true,
-      message: 'Application submitted successfully',
-      data: application
+      message: 'Application submitted successfully! AI analysis is being processed in the background.',
+      data: {
+        application: {
+          id: application._id,
+          jobId: application.jobId,
+          applicationDate: application.applicationDate,
+          status: application.status
+        },
+        aiAnalysisStatus: 'processing'
+      }
     });
   } catch (error) {
     res.status(500).json({
