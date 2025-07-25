@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import asyncHandler from 'express-async-handler';
 
-const sendMail = asyncHandler(async ({email, html, type}) => {
+const sendMail = asyncHandler(async ({ email, html, type }) => {
     const transporter = nodemailer.createTransport({
         host: "smtp.gmail.com",
         port: 465,
@@ -23,6 +23,22 @@ const sendMail = asyncHandler(async ({email, html, type}) => {
         case 'forgot_password':
             subject = "Forgot Password";
             text = `Hello,\n\nPlease use the following code to reset your password:\n`;
+            break;
+        case 'interview_schedule':
+            subject = "Interview Invitation";
+            text = `Your application has been accepted! Please check the HTML version for interview details.`;
+            break;
+        case 'interview_notice':
+            subject = "Interview Schedule Notice";
+            text = `Hello,\n\nYour interview has been scheduled. Please check the HTML version for details.`;
+            break;
+        case 'application_accepted':
+            subject = "Application Accepted";
+            text = "Congratulations! Your application has been accepted!";
+            break;
+        case 'application_rejected':
+            subject = "Application Update";
+            text = "We regret to inform you that your application was not successful.";
             break;
         // case 'accepted':
         //     subject = "Organizer Request Accepted";

@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
-import crypto from 'crypto';
 
 const userSchema = new mongoose.Schema({
   firstName: {
@@ -52,8 +51,7 @@ const userSchema = new mongoose.Schema({
   favoriteJobs: [{
     jobId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Job',
-      required: true
+      ref: 'Job'
     },
     favoriteDate: {
       type: Date,
@@ -97,6 +95,72 @@ const userSchema = new mongoose.Schema({
   },
   images: {
     type: String
+  },
+  // Premium features for job seekers
+  premiumFeatures: {
+    hasUnlimitedApplications: {
+      type: Boolean,
+      default: false
+    },
+    hasPriorityListing: {
+      type: Boolean,
+      default: false
+    },
+    canSeeJobViewers: {
+      type: Boolean,
+      default: false
+    },
+    hasAdvancedFilters: {
+      type: Boolean,
+      default: false
+    },
+    canDirectMessage: {
+      type: Boolean,
+      default: false
+    }
+  },
+  // User analytics and stats
+  analytics: {
+    profileViews: {
+      type: Number,
+      default: 0
+    },
+    cvDownloads: {
+      type: Number,
+      default: 0
+    },
+    jobApplications: {
+      type: Number,
+      default: 0
+    },
+    lastActivityDate: {
+      type: Date,
+      default: Date.now
+    },
+    monthlyViews: [{
+      month: String,
+      year: Number,
+      views: Number
+    }]
+  },
+  // Usage tracking for free tier limits
+  usageLimits: {
+    monthlyApplications: {
+      type: Number,
+      default: 0
+    },
+    favoritesCount: {
+      type: Number,
+      default: 0
+    },
+    cvProfilesCount: {
+      type: Number,
+      default: 1
+    },
+    lastResetDate: {
+      type: Date,
+      default: Date.now
+    }
   }
 }, {
   timestamps: true
@@ -109,12 +173,12 @@ userSchema.index({ 'favoriteJobs.jobId': 1 });
 userSchema.index({ 'favoriteJobs.favoriteDate': -1 });
 
 userSchema.methods.getActiveSubscription = async function() {
-  const UserSubscription = require('./UserSubscription');
+  const UserSubscription = (await import('./UserSubscription.js')).default;
   return await UserSubscription.findActiveByUserId(this._id);
 };
 
 userSchema.methods.getAllSubscriptions = async function() {
-  const UserSubscription = require('./UserSubscription');
+  const UserSubscription = (await import('./UserSubscription.js')).default;
   return await UserSubscription.findByUserId(this._id);
 };
 
@@ -207,15 +271,22 @@ userSchema.methods.clearAllFavorites = function() {
   return this.save();
 };
 
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
-  const salt = bcrypt.genSaltSync(10);
-  this.password = await bcrypt.hash(this.password, salt);
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    return next();
+  } catch (err) {
+    return next(err);
+  }
 });
 
 userSchema.methods.isCorrectPassword = async function(password) {
+  console.log(password, this.password)
   return await bcrypt.compare(password, this.password);
 };
 
@@ -228,6 +299,76 @@ userSchema.methods.createOtp = function() {
 
 userSchema.methods.verifyOtp = function(otp) {
   return this.otp === otp && this.otpExpire > Date.now();
+};
+
+// Premium feature methods
+userSchema.methods.isPremiumUser = async function() {
+  const subscription = await this.getActiveSubscription();
+  return subscription && ['premium', 'enterprise'].includes(subscription.packageType);
+};
+
+userSchema.methods.canApplyToJobFree = function() {
+  const FREE_TIER_LIMIT = 5;
+  return this.usageLimits.monthlyApplications < FREE_TIER_LIMIT;
+};
+
+userSchema.methods.canAddMoreFavorites = function() {
+  const FREE_TIER_LIMIT = 10;
+  return this.usageLimits.favoritesCount < FREE_TIER_LIMIT;
+};
+
+userSchema.methods.incrementProfileView = function() {
+  this.analytics.profileViews++;
+  this.analytics.lastActivityDate = new Date();
+  
+  // Update monthly views
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${now.getMonth() + 1}`;
+  const monthlyView = this.analytics.monthlyViews.find(
+    view => view.month === monthKey
+  );
+  
+  if (monthlyView) {
+    monthlyView.views++;
+  } else {
+    this.analytics.monthlyViews.push({
+      month: monthKey,
+      year: now.getFullYear(),
+      views: 1
+    });
+  }
+  
+  return this.save();
+};
+
+userSchema.methods.incrementCVDownload = function() {
+  this.analytics.cvDownloads++;
+  this.analytics.lastActivityDate = new Date();
+  return this.save();
+};
+
+userSchema.methods.incrementJobApplication = function() {
+  this.analytics.jobApplications++;
+  this.usageLimits.monthlyApplications++;
+  this.analytics.lastActivityDate = new Date();
+  return this.save();
+};
+
+userSchema.methods.resetMonthlyLimits = function() {
+  this.usageLimits.monthlyApplications = 0;
+  this.usageLimits.lastResetDate = new Date();
+  return this.save();
+};
+
+userSchema.methods.getUsageStats = function() {
+  return {
+    profileViews: this.analytics.profileViews,
+    cvDownloads: this.analytics.cvDownloads,
+    jobApplications: this.analytics.jobApplications,
+    monthlyApplicationsUsed: this.usageLimits.monthlyApplications,
+    favoritesUsed: this.usageLimits.favoritesCount,
+    isPremium: this.premiumFeatures
+  };
 };
 
 const User = mongoose.model('User', userSchema);

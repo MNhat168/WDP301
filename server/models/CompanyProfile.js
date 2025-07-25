@@ -12,6 +12,10 @@ const companyProfileSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  jobs: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Job'
+  }],
   aboutUs: {
     type: String
   },

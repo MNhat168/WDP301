@@ -8,39 +8,11 @@ const CVProfileSchema = new Schema({
     required: true,
     unique: true
   },
-  skills: {
-    type: String,
-    trim: true
-  },
-  experience: {
-    type: String,
-    trim: true
-  },
   description: {
     type: String,
     trim: true
   },
-  education: {
-    type: String,
-    trim: true
-  },
-  certifications: {
-    type: String,
-    trim: true
-  },
-  linkUrl: {
-    type: String,
-    trim: true
-  },
   phoneNumber: {
-    type: String,
-    trim: true
-  },
-  avatar: {
-    type: String,
-    trim: true
-  },
-  linkPdf: {
     type: String,
     trim: true
   },
@@ -90,21 +62,16 @@ const CVProfileSchema = new Schema({
       enum: ['basic', 'conversational', 'fluent', 'native']
     }
   }],
-  projects: [{
-    title: String,
-    description: String,
-    technologies: [String],
-    url: String,
-    startDate: Date,
-    endDate: Date
-  }],
   certifications: [{
     name: String,
     issuer: String,
     issueDate: Date,
     expiryDate: Date,
     credentialId: String,
-    url: String
+    files: [{
+      url: { type: String, required: true },
+      public_id: { type: String, required: true }
+    }]
   }],
   visibility: {
     type: String,
@@ -122,19 +89,19 @@ CVProfileSchema.index({ 'skills.skillName': 'text' });
 CVProfileSchema.index({ 'workExperience.company': 'text' });
 CVProfileSchema.index({ visibility: 1 });
 
-CVProfileSchema.virtual('completionPercentage').get(function() {
+CVProfileSchema.virtual('completionPercentage').get(function () {
   const requiredFields = ['summary', 'workExperience', 'education', 'skills'];
   let completed = 0;
-  
+
   if (this.summary && this.summary.trim().length > 0) completed++;
   if (this.workExperience && this.workExperience.length > 0) completed++;
   if (this.education && this.education.length > 0) completed++;
   if (this.skills && this.skills.length > 0) completed++;
-  
+
   return Math.round((completed / requiredFields.length) * 100);
 });
 
-CVProfileSchema.methods.checkCompleteness = function() {
+CVProfileSchema.methods.checkCompleteness = function () {
   const requiredFields = ['summary', 'workExperience', 'education', 'skills'];
   const isComplete = requiredFields.every(field => {
     if (Array.isArray(this[field])) {
@@ -142,13 +109,13 @@ CVProfileSchema.methods.checkCompleteness = function() {
     }
     return this[field] && this[field].toString().trim().length > 0;
   });
-  
+
   this.isComplete = isComplete;
   this.lastUpdated = new Date();
   return isComplete;
 };
 
-CVProfileSchema.pre('save', function(next) {
+CVProfileSchema.pre('save', function (next) {
   this.checkCompleteness();
   next();
 });
