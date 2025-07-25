@@ -1,13 +1,11 @@
+import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import mongoose from 'mongoose'
-import dotenv from 'dotenv'
 import cookieParser from "cookie-parser"
 import initRoutes from './routes/index.js'
 
-//Config - Move this to the top
-dotenv.config()
-
+console.log('DEBUG ENV:', process.env.GROQ_API_KEY);
 const app = express()
 const port = process.env.PORT || 5000
 

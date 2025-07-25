@@ -10,6 +10,7 @@ import paymentRoutes from './paymentRoutes.js'
 import applicationRoutes from './applicationRoutes.js';
 import usageRoutes from './usageRoutes.js';
 import adminRoutes from './adminRoutes.js';
+import aiMatchingRoutes from './aiMatchingRoutes.js';
 import { notFound, errHandler } from '../middlewares/errorHandler.js'
 
 const initRoutes = (app) => {
@@ -26,6 +27,7 @@ const initRoutes = (app) => {
     app.use('/api/payments', paymentRoutes)
     app.use('/api/usage', usageRoutes)
     app.use('/api/admin', adminRoutes)
+    app.use('/api/ai-matching', aiMatchingRoutes)
     app.use(notFound)
     app.use(errHandler)
 }
