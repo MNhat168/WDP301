@@ -144,9 +144,6 @@ class UsageTracker {
     return `${year}-${String(month + 1).padStart(2, '0')}`;
   }
 
-  /**
-   * Check if action is within limits
-   */
   static async checkActionLimit(user, subscription, action, billingPeriod) {
     try {
       const limit = this.getActionLimits(subscription, action);

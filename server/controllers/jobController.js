@@ -109,16 +109,6 @@ const getAllJobs = asyncHandler(async (req, res) => {
 const getJobDetails = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // Validate ObjectId format
-  if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
-    return res.status(400).json({
-      status: false,
-      code: 400,
-      message: 'Invalid job ID format',
-      result: 'Job ID must be a valid ObjectId'
-    });
-  }
-
   try {
     const job = await Job.findById(id)
       .populate('companyId', 'companyName address url')
@@ -136,9 +126,9 @@ const getJobDetails = asyncHandler(async (req, res) => {
     // Track job view if user is authenticated
     if (req.user) {
       await UsageTracker.trackAction(
-        req.user._id, 
-        'job_view', 
-        { jobId: id, companyId: job.companyId._id }, 
+        req.user._id,
+        'job_view',
+        { jobId: id, companyId: job.companyId._id },
         req
       );
     }
@@ -181,22 +171,12 @@ const applyForJob = asyncHandler(async (req, res) => {
   const { cv } = req.body;
   const { _id } = req.user;
 
-  // Validate ObjectId format
-  if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
-    return res.status(400).json({
-      status: false,
-      code: 400,
-      message: 'Invalid job ID format',
-      result: 'Job ID must be a valid ObjectId'
-    });
-  }
-
   try {
     // Check subscription limits and track usage
     const usageResult = await UsageTracker.trackAction(
-      _id, 
-      'job_application', 
-      { jobId: id }, 
+      _id,
+      'job_application',
+      { jobId: id },
       req
     );
 
@@ -257,9 +237,9 @@ const applyForJob = asyncHandler(async (req, res) => {
 
     // Track job view
     await UsageTracker.trackAction(
-      _id, 
-      'job_view', 
-      { jobId: id, action: 'application_submitted' }, 
+      _id,
+      'job_view',
+      { jobId: id, action: 'application_submitted' },
       req
     );
 
@@ -369,23 +349,12 @@ export const updateApplicationStatus = asyncHandler(async (req, res) => {
 const addFavoriteJob = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { _id } = req.user;
-
-  // Validate ObjectId format
-  if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
-    return res.status(400).json({
-      status: false,
-      code: 400,
-      message: 'Invalid job ID format',
-      result: 'Job ID must be a valid ObjectId'
-    });
-  }
-
   try {
     // Check subscription limits and track usage
     const usageResult = await UsageTracker.trackAction(
-      _id, 
-      'add_favorite', 
-      { jobId: id }, 
+      _id,
+      'add_favorite',
+      { jobId: id },
       req
     );
 
@@ -431,25 +400,15 @@ const removeFavoriteJob = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { _id } = req.user;
 
-  // Validate ObjectId format
-  if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
-    return res.status(400).json({
-      status: false,
-      code: 400,
-      message: 'Invalid job ID format',
-      result: 'Job ID must be a valid ObjectId'
-    });
-  }
-
   try {
     const user = await User.findById(_id);
     await user.removeFavoriteJob(id);
 
     // Track removal (doesn't count against limits)
     await UsageTracker.trackAction(
-      _id, 
-      'remove_favorite', 
-      { jobId: id }, 
+      _id,
+      'remove_favorite',
+      { jobId: id },
       req
     );
 
@@ -500,15 +459,15 @@ const createJob = asyncHandler(async (req, res) => {
   try {
     // Check subscription limits and track usage
     const usageResult = await UsageTracker.trackAction(
-      _id, 
-      'job_posting', 
-      { 
-        companyId, 
-        jobType, 
+      _id,
+      'job_posting',
+      {
+        companyId,
+        jobType,
         isFeatured,
         isSponsored,
-        isUrgentHiring 
-      }, 
+        isUrgentHiring
+      },
       req
     );
 
@@ -518,11 +477,11 @@ const createJob = asyncHandler(async (req, res) => {
         code: 403,
         message: usageResult.reason,
         result: {
-          currentUsage: usageResult.limitInfo.currentUsage,
-          limit: usageResult.limitInfo.limit,
-          remaining: usageResult.limitInfo.remaining,
+          currentUsage: usageResult.limitInfo?.currentUsage || 0,
+          limit: usageResult.limitInfo?.limit || 0,
+          remaining: usageResult.limitInfo?.remaining || 0,
           upgradeRequired: usageResult.upgradeRequired,
-          currentTier: usageResult.currentTier
+          currentTier: usageResult.currentTier || 'free'
         }
       });
     }
@@ -572,9 +531,9 @@ const createJob = asyncHandler(async (req, res) => {
     // Track featured job posting separately if applicable
     if (isFeatured && subscription?.features_config?.canPostFeaturedJobs) {
       await UsageTracker.trackAction(
-        _id, 
-        'featured_job_post', 
-        { jobId: savedJob._id }, 
+        _id,
+        'featured_job_post',
+        { jobId: savedJob._id },
         req
       );
     }
@@ -685,15 +644,6 @@ const getFavoriteStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { _id } = req.user;
 
-  // Validate ObjectId format
-  if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
-    return res.status(400).json({
-      status: false,
-      code: 400,
-      message: 'Invalid job ID format',
-      result: 'Job ID must be a valid ObjectId'
-    });
-  }
 
   try {
     const user = await User.findById(_id);
@@ -778,7 +728,7 @@ const updateEmployerJob = asyncHandler(async (req, res) => {
 const getPendingJobs = asyncHandler(async (req, res) => {
   try {
     const jobs = await Job.find({ status: 'pending' })
-      .populate('companyId', 'companyName userId') 
+      .populate('companyId', 'companyName userId')
       .sort({ createdAt: -1 });
     return res.status(200).json({
       status: true,
@@ -799,10 +749,10 @@ const getPendingJobs = asyncHandler(async (req, res) => {
 const updateJobStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  
+
   try {
     const job = await Job.findById(id).populate('companyId', 'userId');
-    
+
     if (!job) {
       return res.status(404).json({
         status: false,
@@ -816,7 +766,7 @@ const updateJobStatus = asyncHandler(async (req, res) => {
 
     if (job.companyId && job.companyId.userId) {
       const notification = new Notification({
-        userId: job.companyId.userId, 
+        userId: job.companyId.userId,
         message: `Your job "${job.title}" has been ${status}`,
         type: 'system'
       });
