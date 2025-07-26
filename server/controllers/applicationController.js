@@ -29,8 +29,6 @@ export const applyToJob = async (req, res) => {
       await cvProfile.save();
     }
 
-    // Check if CV profile has minimum required information for job application
-    // Only require skills - other fields are optional
     if (!cvProfile.skills || cvProfile.skills.length === 0) {
       return res.status(400).json({
         success: false,
@@ -75,13 +73,14 @@ export const applyToJob = async (req, res) => {
       try {
         console.log(`🤖 Starting AI analysis for application ${application._id}`);
         const matchResult = await AIMatchingService.calculateMatchScore(cvProfile, job);
-        
+
         if (matchResult.success) {
-          // Update application with AI analysis
+          matchResult.analysis.overallRecommendation =
+            matchResult.analysis.overallRecommendation || 'consider';
+
           await Application.findByIdAndUpdate(application._id, {
             aiAnalysis: matchResult.analysis
           });
-          console.log(`✅ AI analysis completed for application ${application._id} with score: ${matchResult.analysis.matchScore}`);
         } else {
           console.log(`⚠️ AI analysis failed for application ${application._id}, using fallback score: ${matchResult.fallbackScore}`);
           // Use fallback scoring
@@ -95,14 +94,14 @@ export const applyToJob = async (req, res) => {
             analyzedAt: new Date(),
             aiModel: 'fallback'
           };
-          
+
           await Application.findByIdAndUpdate(application._id, {
             aiAnalysis: fallbackAnalysis
           });
         }
       } catch (error) {
         console.error(`❌ Error in background AI analysis for application ${application._id}:`, error);
-        
+
         // Save basic fallback analysis even if error occurs
         try {
           const basicFallback = {
@@ -115,7 +114,7 @@ export const applyToJob = async (req, res) => {
             analyzedAt: new Date(),
             aiModel: 'error-fallback'
           };
-          
+
           await Application.findByIdAndUpdate(application._id, {
             aiAnalysis: basicFallback
           });
@@ -450,7 +449,7 @@ export const scheduleBulkInterview = async (req, res) => {
     }
 
     const applications = await Application.find({
-      _id: { $in: applicationIds }, 
+      _id: { $in: applicationIds },
       status: 'pending',
       jobId
     }).populate('userId', 'email firstName lastName');
@@ -571,7 +570,17 @@ export const updateApplicationStatus = async (req, res) => {
 
     application.status = status;
     await application.save();
-
+    if (status === 'accepted') {
+      const job = await Job.findById(application.jobId);
+      if (job) {
+        job.applicantCount = Math.max(0, job.applicantCount - 1);
+        const now = new Date();
+        if (job.applicantCount === 0 || (job.endDate && new Date(job.endDate) < now)) {
+          job.status = 'inactive';
+        }
+        await job.save();
+      }
+    }
     res.json({
       success: true,
       message: `Application ${status} successfully`,

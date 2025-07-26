@@ -8,10 +8,10 @@ import checkoutNodeJssdk from '@paypal/checkout-server-sdk';
 // Get all available subscription plans
 const getSubscriptionPlans = asyncHandler(async (req, res) => {
   const { userType = 'jobSeeker' } = req.query;
-  
+
   try {
     const plans = await Subscription.find({ isActive: true }).sort({ basePrice: 1 });
-    
+
     // Format plans for specific user type
     const formattedPlans = plans.map(plan => ({
       _id: plan._id,
@@ -45,11 +45,11 @@ const getSubscriptionPlans = asyncHandler(async (req, res) => {
 // Get user's current subscription
 const getUserSubscription = asyncHandler(async (req, res) => {
   const { _id } = req.user;
-  
+
   try {
     const userSubscription = await UserSubscription.findActiveByUserId(_id)
       .populate('subscriptionId');
-    
+
     if (!userSubscription) {
       return res.status(200).json({
         status: true,
@@ -91,15 +91,15 @@ const getUserSubscription = asyncHandler(async (req, res) => {
 // Subscribe to a plan
 const subscribeToPlan = asyncHandler(async (req, res) => {
   const { _id } = req.user;
-  const { 
-    subscriptionId, 
+  const {
+    subscriptionId,
     paymentMethod = 'paypal',
     billingPeriod = 'monthly' // monthly or yearly
   } = req.body;
-  
+
   try {
     const subscription = await Subscription.findById(subscriptionId);
-    
+
     if (!subscription || !subscription.isActive) {
       return res.status(404).json({
         status: false,
@@ -108,23 +108,23 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
         result: 'Invalid subscription plan'
       });
     }
-    
+
     const user = await User.findById(_id);
-    
+
     // Calculate pricing based on billing period
     const userRole = await user.populate('roleId');
     const userType = userRole.roleId.name === 'ROLE_EMPLOYEE' ? 'employer' : 'jobSeeker';
-    const price = billingPeriod === 'yearly' 
-      ? subscription.pricing[userType].yearly 
+    const price = billingPeriod === 'yearly'
+      ? subscription.pricing[userType].yearly
       : subscription.pricing[userType].monthly;
-    
+
     // Check if user already has active subscription
     const existingSubscription = await UserSubscription.findActiveByUserId(_id);
-    
+
     if (existingSubscription) {
       // User wants to change/upgrade subscription
       console.log('User has existing subscription, upgrading...');
-      
+
       // If it's the same plan, just return success
       if (existingSubscription.subscriptionId.toString() === subscriptionId) {
         return res.status(200).json({
@@ -137,13 +137,13 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
           }
         });
       }
-      
+
       // If it's a trial or free subscription (price = 0), activate immediately
       if (paymentMethod === 'trial' || price === 0) {
         const trialDuration = subscription.promotions?.freeTrialDays || 30;
         const expiryDate = new Date();
         expiryDate.setDate(expiryDate.getDate() + trialDuration);
-        
+
         // Update existing subscription
         existingSubscription.subscriptionId = subscriptionId;
         existingSubscription.packageType = subscription.packageType;
@@ -152,9 +152,9 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
         existingSubscription.paymentMethod = 'trial';
         existingSubscription.expiryDate = expiryDate;
         existingSubscription.billing.paymentStatus = price === 0 ? 'paid' : 'trial';
-        
+
         await existingSubscription.save();
-        
+
         // Update user premium features
         if (subscription.packageType !== 'free') {
           user.premiumFeatures = {
@@ -177,7 +177,7 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
           }
         });
       }
-      
+
       // For paid upgrades, create PayPal payment URL
       const request = new checkoutNodeJssdk.orders.OrdersCreateRequest();
       request.prefer('return=representation');
@@ -206,7 +206,7 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
       if (!approvalUrl) {
         throw new Error('Failed to create PayPal order or get approval URL');
       }
-      
+
       // Update existing subscription to pending for upgrade
       existingSubscription.subscriptionId = subscriptionId;
       existingSubscription.packageType = subscription.packageType;
@@ -215,7 +215,7 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
       existingSubscription.paymentMethod = paymentMethod;
       existingSubscription.billing.paymentStatus = 'pending';
       existingSubscription.billing.paypalOrderId = orderId;
-      
+
       await existingSubscription.save();
 
       return res.status(200).json({
@@ -234,16 +234,16 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
         }
       });
     }
-    
+
     // User doesn't have subscription, create new one
     console.log('User has no subscription, creating new...');
-    
+
     // If it's a trial subscription (price = 0), activate immediately
     if (paymentMethod === 'trial' || price === 0) {
       const trialDuration = subscription.promotions?.freeTrialDays || 30;
       const expiryDate = new Date();
       expiryDate.setDate(expiryDate.getDate() + trialDuration);
-      
+
       const newUserSubscription = new UserSubscription({
         userId: _id,
         subscriptionId: subscriptionId,
@@ -256,9 +256,9 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
           paymentStatus: price === 0 ? 'paid' : 'trial'
         }
       });
-      
+
       await newUserSubscription.save();
-      
+
       // Update user premium features
       if (subscription.packageType !== 'free') {
         user.premiumFeatures = {
@@ -281,7 +281,7 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
         }
       });
     }
-    
+
     // For paid subscriptions, create PayPal payment URL
     const request = new checkoutNodeJssdk.orders.OrdersCreateRequest();
     request.prefer('return=representation');
@@ -310,7 +310,7 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
     if (!approvalUrl) {
       throw new Error('Failed to create PayPal order or get approval URL');
     }
-    
+
     // Create pending subscription
     const newUserSubscription = new UserSubscription({
       userId: _id,
@@ -326,7 +326,7 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
         nextPaymentDate: new Date(Date.now() + (billingPeriod === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000)
       }
     });
-    
+
     await newUserSubscription.save();
 
     return res.status(200).json({
@@ -357,11 +357,11 @@ const subscribeToPlan = asyncHandler(async (req, res) => {
 const upgradeSubscription = asyncHandler(async (req, res) => {
   const { _id } = req.user;
   const { subscriptionId, paymentMethod = 'paypal' } = req.body;
-  
+
   try {
     const newSubscription = await Subscription.findById(subscriptionId);
     const currentUserSubscription = await UserSubscription.findActiveByUserId(_id);
-    
+
     if (!currentUserSubscription) {
       return res.status(400).json({
         status: false,
@@ -370,7 +370,7 @@ const upgradeSubscription = asyncHandler(async (req, res) => {
         result: 'Please subscribe first'
       });
     }
-    
+
     if (!newSubscription || !newSubscription.isActive) {
       return res.status(404).json({
         status: false,
@@ -379,13 +379,13 @@ const upgradeSubscription = asyncHandler(async (req, res) => {
         result: 'Invalid subscription plan'
       });
     }
-    
+
     // Upgrade the subscription
     await currentUserSubscription.upgradeSubscription(newSubscription.packageType, {
       billing: { paymentMethod: paymentMethod },
       paidAmount: newSubscription.basePrice
     });
-    
+
     // Update user premium features
     const user = await User.findById(_id);
     user.premiumFeatures = {
@@ -417,10 +417,10 @@ const upgradeSubscription = asyncHandler(async (req, res) => {
 const cancelSubscription = asyncHandler(async (req, res) => {
   const { _id } = req.user;
   const { reason } = req.body;
-  
+
   try {
     const userSubscription = await UserSubscription.findActiveByUserId(_id);
-    
+
     if (!userSubscription) {
       return res.status(404).json({
         status: false,
@@ -429,15 +429,15 @@ const cancelSubscription = asyncHandler(async (req, res) => {
         result: 'No subscription to cancel'
       });
     }
-    
+
     // Cancel the subscription
     userSubscription.status = 'cancelled';
     userSubscription.cancellationDate = new Date();
     userSubscription.cancellationReason = reason;
     userSubscription.autoRenew = false;
-    
+
     await userSubscription.save();
-    
+
     // Reset user premium features
     const user = await User.findById(_id);
     user.premiumFeatures = {
@@ -468,11 +468,11 @@ const cancelSubscription = asyncHandler(async (req, res) => {
 // Get user usage statistics
 const getUserUsageStats = asyncHandler(async (req, res) => {
   const { _id } = req.user;
-  
+
   try {
     const user = await User.findById(_id);
     const subscription = await UserSubscription.findActiveByUserId(_id);
-    
+
     // Import models for counting actual records
     const Application = (await import('../models/Application.js')).default;
     const Job = (await import('../models/Job.js')).default;
@@ -480,7 +480,7 @@ const getUserUsageStats = asyncHandler(async (req, res) => {
 
     // Count actual applications from database
     const actualApplicationCount = await Application.countDocuments({ userId: _id });
-    
+
     // Count actual job postings (if employer)
     let actualJobPostingCount = 0;
     const companyProfile = await CompanyProfile.findOne({ userId: _id });
@@ -505,9 +505,9 @@ const getUserUsageStats = asyncHandler(async (req, res) => {
         applications: {
           used: subscription.usageStats.applicationsUsed,
           actual: actualApplicationCount,
-          limit: subscription.packageType === 'enterprise' ? -1 : 
-            (subscription.packageType === 'premium' ? 50 : 
-             subscription.packageType === 'basic' ? 10 : 0),
+          limit: subscription.packageType === 'enterprise' ? -1 :
+            (subscription.packageType === 'premium' ? 50 :
+              subscription.packageType === 'basic' ? 10 : 0),
           remaining: subscription.getRemainingApplications(),
           canApply: subscription.canApplyToJob(),
           needsSync: subscription.usageStats.applicationsUsed !== actualApplicationCount
@@ -515,9 +515,9 @@ const getUserUsageStats = asyncHandler(async (req, res) => {
         jobPostings: {
           used: subscription.usageStats.jobPostingsUsed,
           actual: actualJobPostingCount,
-          limit: subscription.packageType === 'enterprise' ? -1 : 
-            (subscription.packageType === 'premium' ? 20 : 
-             subscription.packageType === 'basic' ? 5 : 0),
+          limit: subscription.packageType === 'enterprise' ? -1 :
+            (subscription.packageType === 'premium' ? 20 :
+              subscription.packageType === 'basic' ? 5 : 0),
           remaining: subscription.getRemainingJobPostings(),
           canPost: subscription.canPostJob(),
           needsSync: subscription.usageStats.jobPostingsUsed !== actualJobPostingCount
@@ -569,12 +569,12 @@ const getUserUsageStats = asyncHandler(async (req, res) => {
         monthlyViews: user.analytics.monthlyViews
       },
       syncStatus: {
-        needsApplicationSync: subscription ? 
+        needsApplicationSync: subscription ?
           subscription.usageStats.applicationsUsed !== actualApplicationCount :
           user.usageLimits.monthlyApplications !== actualApplicationCount,
-        needsJobPostingSync: subscription ? 
+        needsJobPostingSync: subscription ?
           subscription.usageStats.jobPostingsUsed !== actualJobPostingCount : false,
-        lastSyncRecommended: subscription ? 
+        lastSyncRecommended: subscription ?
           subscription.usageStats.applicationsUsed !== actualApplicationCount ||
           subscription.usageStats.jobPostingsUsed !== actualJobPostingCount :
           user.usageLimits.monthlyApplications !== actualApplicationCount
@@ -600,11 +600,11 @@ const getUserUsageStats = asyncHandler(async (req, res) => {
 // Sync user counters with actual database records  
 const syncUserCounters = asyncHandler(async (req, res) => {
   const { _id } = req.user;
-  
+
   try {
     const user = await User.findById(_id);
     const subscription = await UserSubscription.findActiveByUserId(_id);
-    
+
     // Import models for counting
     const Application = (await import('../models/Application.js')).default;
     const Job = (await import('../models/Job.js')).default;
@@ -613,7 +613,7 @@ const syncUserCounters = asyncHandler(async (req, res) => {
     // Count actual records
     const actualApplicationCount = await Application.countDocuments({ userId: _id });
     let actualJobPostingCount = 0;
-    
+
     const companyProfile = await CompanyProfile.findOne({ userId: _id });
     if (companyProfile) {
       actualJobPostingCount = await Job.countDocuments({ companyId: companyProfile._id });
@@ -631,13 +631,13 @@ const syncUserCounters = asyncHandler(async (req, res) => {
       // Update subscription counters
       const oldAppCount = subscription.usageStats.applicationsUsed;
       const oldJobCount = subscription.usageStats.jobPostingsUsed;
-      
+
       subscription.usageStats.applicationsUsed = actualApplicationCount;
       subscription.usageStats.jobPostingsUsed = actualJobPostingCount;
       subscription.usageStats.lastUsedDate = new Date();
-      
+
       await subscription.save();
-      
+
       syncResult.subscription = {
         packageType: subscription.packageType,
         applications: {
@@ -655,12 +655,12 @@ const syncUserCounters = asyncHandler(async (req, res) => {
       // Update free tier user counters
       const oldAppCount = user.usageLimits.monthlyApplications;
       const oldAnalyticsCount = user.analytics.jobApplications;
-      
+
       user.usageLimits.monthlyApplications = actualApplicationCount;
       user.analytics.jobApplications = actualApplicationCount;
-      
+
       await user.save();
-      
+
       syncResult.freeTier = {
         applications: {
           oldMonthlyCount: oldAppCount,
@@ -690,6 +690,16 @@ const syncUserCounters = asyncHandler(async (req, res) => {
 // Admin: Get subscription analytics
 const getSubscriptionAnalytics = asyncHandler(async (req, res) => {
   try {
+    const totalRevenueResult = await UserSubscription.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: "$paidAmount" }
+        }
+      }
+    ]);
+
+    const totalRevenue = totalRevenueResult[0]?.totalRevenue || 0;
     const analytics = await UserSubscription.aggregate([
       {
         $group: {
@@ -704,10 +714,10 @@ const getSubscriptionAnalytics = asyncHandler(async (req, res) => {
         }
       }
     ]);
-    
+
     const totalUsers = await UserSubscription.countDocuments();
     const activeSubscriptions = await UserSubscription.countDocuments({ status: 'active' });
-    
+
     return res.status(200).json({
       status: true,
       code: 200,
@@ -716,6 +726,7 @@ const getSubscriptionAnalytics = asyncHandler(async (req, res) => {
         planAnalytics: analytics,
         totalUsers,
         activeSubscriptions,
+        totalRevenue,
         conversionRate: totalUsers > 0 ? (activeSubscriptions / totalUsers * 100).toFixed(2) : 0
       }
     });
@@ -732,11 +743,11 @@ const getSubscriptionAnalytics = asyncHandler(async (req, res) => {
 // Ensure user has default free subscription
 const ensureDefaultSubscription = asyncHandler(async (req, res) => {
   const { _id } = req.user;
-  
+
   try {
     // Check if user already has any subscription
     const existingSubscription = await UserSubscription.findOne({ userId: _id });
-    
+
     if (existingSubscription) {
       return res.status(200).json({
         status: true,
@@ -745,10 +756,10 @@ const ensureDefaultSubscription = asyncHandler(async (req, res) => {
         result: existingSubscription
       });
     }
-    
+
     // Create free subscription
     const freePackage = await Subscription.findOne({ packageType: 'free', isActive: true });
-    
+
     if (!freePackage) {
       return res.status(404).json({
         status: false,
@@ -757,10 +768,10 @@ const ensureDefaultSubscription = asyncHandler(async (req, res) => {
         result: 'No free plan available'
       });
     }
-    
+
     const expiry = new Date();
     expiry.setFullYear(expiry.getFullYear() + 1);
-    
+
     const freeSubscription = new UserSubscription({
       userId: _id,
       subscriptionId: freePackage._id,
@@ -774,16 +785,16 @@ const ensureDefaultSubscription = asyncHandler(async (req, res) => {
         paymentStatus: 'paid'
       }
     });
-    
+
     await freeSubscription.save();
-    
+
     return res.status(200).json({
       status: true,
       code: 200,
       message: 'Default free subscription created',
       result: freeSubscription
     });
-    
+
   } catch (error) {
     return res.status(500).json({
       status: false,
@@ -797,7 +808,7 @@ const ensureDefaultSubscription = asyncHandler(async (req, res) => {
 // Get billing history for current user
 const getBillingHistory = asyncHandler(async (req, res) => {
   const { _id } = req.user;
-  
+
   try {
     const history = await UserSubscription.find({ userId: _id })
       .populate('subscriptionId', 'packageName packageType basePrice')
@@ -956,6 +967,111 @@ const deleteSubscription = asyncHandler(async (req, res) => {
   }
 });
 
+const getAllBillingHistory = asyncHandler(async (req, res) => {
+  try {
+    const { startDate, endDate, packageType, status, search } = req.query;
+
+    let query = {};
+
+    if (startDate || endDate) {
+      query.paymentDate = {};
+      if (startDate) query.paymentDate.$gte = new Date(startDate);
+      if (endDate) query.paymentDate.$lte = new Date(endDate);
+    }
+
+    if (packageType) query.packageType = packageType;
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+
+    if (search) {
+      query.$or = [
+        { 'user.name': { $regex: search, $options: 'i' } },
+        { 'user.email': { $regex: search, $options: 'i' } },
+        { planName: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const history = await UserSubscription.aggregate([
+      { $match: query },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'user'
+        }
+      },
+      { $unwind: '$user' },
+      {
+        $project: {
+          id: '$_id',
+          planName: '$subscriptionId.packageName',
+          planType: '$packageType',
+          amount: '$paidAmount',
+          status: 1,
+          paymentDate: '$billing.lastPaymentDate',
+          expiryDate: 1,
+          userName: { $concat: ['$user.firstName', ' ', '$user.lastName'] },
+          userEmail: '$user.email'
+        }
+      },
+      { $sort: { paymentDate: -1 } }
+    ]);
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: 'Billing history retrieved successfully',
+      result: history
+    });
+  } catch (error) {
+    console.error('Get billing history error:', error);
+    return res.status(400).json({
+      status: false,
+      code: 400,
+      message: 'Get billing history failed',
+      result: error.message
+    });
+  }
+});
+
+const getPaymentStatusAnalytics = asyncHandler(async (req, res) => {
+  try {
+    const statusAnalytics = await UserSubscription.aggregate([
+      {
+        $group: {
+          _id: "$billing.paymentStatus",
+          count: { $sum: 1 },
+          totalAmount: { $sum: "$paidAmount" }
+        }
+      },
+      {
+        $project: {
+          status: "$_id",
+          count: 1,
+          totalAmount: 1,
+          _id: 0
+        }
+      }
+    ]);
+
+    return res.status(200).json({
+      status: true,
+      code: 200,
+      message: "Payment status analytics retrieved",
+      result: statusAnalytics
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      code: 500,
+      message: "Failed to get payment analytics",
+      error: error.message
+    });
+  }
+});
+
 export {
   getSubscriptionPlans,
   getUserSubscription,
@@ -969,5 +1085,7 @@ export {
   getBillingHistory,
   createSubscription,
   updateSubscription,
-  deleteSubscription
+  deleteSubscription,
+  getAllBillingHistory,
+  getPaymentStatusAnalytics
 }; 

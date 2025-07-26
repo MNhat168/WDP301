@@ -13,7 +13,9 @@ import {
   getBillingHistory,
   createSubscription,
   updateSubscription,
-  deleteSubscription
+  deleteSubscription,
+  getAllBillingHistory,
+  getPaymentStatusAnalytics
 } from '../controllers/subscriptionController.js';
 
 const router = express.Router();
@@ -39,5 +41,6 @@ router.get('/analytics', getSubscriptionAnalytics);
 router.post('/admin',  createSubscription);
 router.put('/admin/:id',  updateSubscription);
 router.delete('/admin/:id',  deleteSubscription);
-
+router.get('/admin/transactions',getAllBillingHistory);
+router.get('/admin/payment-status', getPaymentStatusAnalytics);
 export default router; 

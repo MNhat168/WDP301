@@ -50,7 +50,7 @@ const ApplicationSchema = new Schema({
     },
     overallRecommendation: {
       type: String,
-      enum: ['highly_recommended', 'recommended', 'consider', 'not_recommended'],
+      enum: ['highly_recommended', 'recommended', 'consider', 'not_recommended',null],
       default: null
     },
     analyzedAt: {
